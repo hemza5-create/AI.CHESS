@@ -3,8 +3,8 @@ import { Chess } from 'chess.js';
 import type { Square } from 'chess.js';
 import { motion, useReducedMotion } from 'motion/react';
 import { RotateCcw, ArrowUpDown, Undo2, Navigation, RefreshCw, Edit3 } from 'lucide-react';
-import { ChessPieceSvg, type PieceCode } from './ChessPieces';
-import type { BoardOrientation, StockfishAnalysisResult } from '../types/chess';
+import { ChessPieceSvg, type PieceCode } from './ChessPieces.tsx';
+import type { BoardOrientation, StockfishAnalysisResult } from '../types/chess.ts';
 
 interface DigitalBoardProps {
   fen: string;

@@ -1,14 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import { Copy, Check, Download } from 'lucide-react';
-import { LiveVisionStage } from './components/LiveVisionStage';
-import { DigitalBoard } from './components/DigitalBoard';
-import { AnalysisAndVoicePanel } from './components/AnalysisAndVoicePanel';
-import { ResourceTradeoffConsole } from './components/ResourceTradeoffConsole';
-import { PWAInstallButton } from './components/PWAInstallButton';
-import { OpenCvChessPipeline, computeFitRoi } from './vision/opencvPipeline';
-import { renderVirtualBoardToCanvas, SAMPLE_GAMES } from './vision/virtualBoardRenderer';
-import { playMoveTapSound, unlockAudioContext } from './utils/soundEffects';
+import { LiveVisionStage } from './components/LiveVisionStage.tsx';
+import { DigitalBoard } from './components/DigitalBoard.tsx';
+import { AnalysisAndVoicePanel } from './components/AnalysisAndVoicePanel.tsx';
+import { ResourceTradeoffConsole } from './components/ResourceTradeoffConsole.tsx';
+import { PWAInstallButton } from './components/PWAInstallButton.tsx';
+import { OpenCvChessPipeline, computeFitRoi } from './vision/opencvPipeline.ts';
+import { renderVirtualBoardToCanvas, SAMPLE_GAMES } from './vision/virtualBoardRenderer.ts';
+import { playMoveTapSound, unlockAudioContext } from './utils/soundEffects.ts';
 import type {
   CaptureSource,
   FrameTelemetry,
@@ -19,7 +19,7 @@ import type {
   TtsVoiceName,
   VisionConfig,
   VisionViewMode,
-} from './types/chess';
+} from './types/chess.ts';
 
 const DEFAULT_VIRTUAL_ROI: RoiQuad = [
   { x: 0.08, y: 0.08 },

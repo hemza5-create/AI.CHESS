@@ -15,7 +15,7 @@ import type {
   MoveRecord,
   StockfishAnalysisResult,
   TtsVoiceName,
-} from '../types/chess';
+} from '../types/chess.ts';
 
 interface AnalysisAndVoicePanelProps {
   analysis: StockfishAnalysisResult | null;

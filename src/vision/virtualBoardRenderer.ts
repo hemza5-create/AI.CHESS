@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js';
-import type { BoardOrientation } from '../types/chess';
+import type { BoardOrientation } from '../types/chess.ts';
 
 const PIECE_UNICODE: Record<string, string> = {
   wp: '♙',

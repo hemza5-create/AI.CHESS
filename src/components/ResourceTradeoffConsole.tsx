@@ -5,7 +5,7 @@ import type {
   ScanResolution,
   SquareMetric,
   VisionConfig,
-} from '../types/chess';
+} from '../types/chess.ts';
 
 interface ResourceTradeoffConsoleProps {
   config: VisionConfig;

@@ -20,8 +20,8 @@ import type {
   RoiQuad,
   VisionViewMode,
   FrameTelemetry,
-} from '../types/chess';
-import { SAMPLE_GAMES } from '../vision/virtualBoardRenderer';
+} from '../types/chess.ts';
+import { SAMPLE_GAMES } from '../vision/virtualBoardRenderer.ts';
 
 interface LiveVisionStageProps {
   source: CaptureSource;
