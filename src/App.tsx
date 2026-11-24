@@ -51,6 +51,29 @@ def analyze_and_explain(uci_move):
         info = engine.analyse(board, chess.engine.Limit(depth=15))
         print(f"النقلة: {uci_move} | أفضل رد: {info['pv'][0]} | التقييم: {info['score'].white()}")`;
 
+async function parseJsonResponse<T>(res: Response, fallbackError: string): Promise<T> {
+  const rawText = await res.text();
+  if (!rawText.trim()) {
+    throw new Error(`${fallbackError} (استجابة فارغة من الخادم: ${res.status})`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    throw new Error(
+      `استجاب المحرك بصيغة غير صالحة (ليست JSON). تأكد من تشغيل خادم التطبيق (${res.status}).`
+    );
+  }
+  if (!res.ok) {
+    const errMsg =
+      parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error?: unknown }).error === 'string'
+        ? (parsed as { error: string }).error
+        : fallbackError;
+    throw new Error(errMsg);
+  }
+  return parsed as T;
+}
+
 export default function App() {
   const [source, setSource] = useState<CaptureSource>('virtual');
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
@@ -198,12 +221,12 @@ export default function App() {
             playerElo,
           }),
         });
-        const expData = await expRes.json();
-        if (!expRes.ok) {
-          throw new Error(expData.error || 'فشل توليد الشرح التحليلي.');
-        }
+        const expData = await parseJsonResponse<{ explanation: string }>(
+          expRes,
+          'فشل توليد الشرح التحليلي.'
+        );
 
-        const text = expData.explanation as string;
+        const text = expData.explanation;
         setExplanationText(text);
         setIsGeneratingExplanation(false);
 
@@ -214,10 +237,10 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, voiceName: selectedVoice }),
         });
-        const ttsData = await ttsRes.json();
-        if (!ttsRes.ok) {
-          throw new Error(ttsData.error || 'فشل تحويل الشرح إلى صوت.');
-        }
+        const ttsData = await parseJsonResponse<{ audioBase64: string; mimeType?: string }>(
+          ttsRes,
+          'فشل تحويل الشرح إلى صوت.'
+        );
 
         const url = `data:${ttsData.mimeType || 'audio/wav'};base64,${ttsData.audioBase64}`;
         setAudioDataUrl(url);
@@ -258,11 +281,10 @@ export default function App() {
           }),
           signal: controller.signal,
         });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'فشل تحليل Stockfish.');
-        }
-        const typed = data as StockfishAnalysisResult;
+        const typed = await parseJsonResponse<StockfishAnalysisResult>(
+          res,
+          'فشل تحليل Stockfish.'
+        );
         setAnalysis(typed);
 
         // Update latest move evaluation label in history
@@ -714,12 +736,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: dataUrl, mimeType: 'image/jpeg' }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'تعذر قراءة وضعية الرقعة.');
-      }
+      const data = await parseJsonResponse<{ fen: string; turn?: 'w' | 'b' }>(
+        res,
+        'تعذر قراءة وضعية الرقعة.'
+      );
 
-      const applied = applyCustomFen(data.fen as string);
+      const applied = applyCustomFen(data.fen);
       if (!applied) {
         throw new Error('تمت قراءة الوضعية لكنها لم تجتز التحقق القانوني للشطرنج.');
       }
@@ -804,9 +826,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col">
+    <div className="relative min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col">
+      {/* Full-Height Vertical Background Artwork */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden" aria-hidden="true">
+        <img
+          src="/assets/aistudio/FB_IMG_1795486450572_eb120a57.jpg"
+          alt=""
+          className="w-full h-full object-cover object-center opacity-40"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0E14]/75 via-[#0B0E14]/55 to-[#0B0E14]/85" />
+      </div>
+
       {/* Top Bar Contract: Single Row, 3 Zones */}
-      <header className="sticky top-0 z-30 bg-[#0B0E14]/95 backdrop-blur border-b border-slate-800">
+      <header className="sticky top-0 z-30 bg-[#0B0E14]/85 backdrop-blur-md border-b border-slate-800/80">
         <div className="max-w-[1440px] mx-auto px-6 h-14 flex items-center justify-between gap-8">
           {/* Zone 1: Single-line Brand Title */}
           <a
@@ -814,9 +846,9 @@ export default function App() {
             className="flex items-center gap-2.5 text-base font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
           >
             <img
-              src="/assets/aistudio/FB_IMG_1795486450572_eb120a57.jpg"
+              src="/assets/aistudio/apple-touch-icon_f4ce301f.png"
               alt="شعار رَصْد الشطرنج"
-              className="w-8 h-8 rounded-lg object-cover object-top ring-1 ring-amber-400/30 shrink-0"
+              className="w-8 h-8 rounded-lg object-cover ring-1 ring-amber-400/30 shrink-0"
             />
             <span>رَصْد الشطرنج</span>
           </a>
@@ -867,7 +899,7 @@ export default function App() {
       </header>
 
       {/* Main Workspace Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <main className="relative z-10 flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
         {/* Intro Strip (Compact, direct functional overview) */}
         <section className="flex flex-wrap items-end justify-between gap-4 pb-2 border-b border-slate-800/80">
           <div className="max-w-2xl">
@@ -1082,7 +1114,7 @@ export default function App() {
         {/* Architecture & Python Reference Implementation */}
         <section
           id="architecture-reference"
-          className="border border-slate-800 bg-[#121722] rounded-xl overflow-hidden"
+          className="border border-slate-800/80 bg-[#121722]/85 backdrop-blur-sm rounded-xl overflow-hidden"
         >
           <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-slate-800">
             <h2 className="text-sm font-semibold text-slate-100">

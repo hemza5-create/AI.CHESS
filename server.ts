@@ -99,14 +99,38 @@ function formatEvaluationLabel(scoreType: 'cp' | 'mate', whiteVal: number): stri
 class StockfishUciEngine {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private ready = false;
+  private needsFlush = false;
   private initPromise: Promise<void> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private lineListeners: Set<(line: string) => void> = new Set();
+  private exitListeners: Set<(err: Error) => void> = new Set();
   private buffer = '';
 
+  private resetProcessState(err?: Error): void {
+    this.proc = null;
+    this.ready = false;
+    this.needsFlush = false;
+    this.initPromise = null;
+    this.buffer = '';
+    const exitErr = err ?? new Error('توقفت عملية محرك Stockfish بشكل غير متوقع.');
+    for (const listener of this.exitListeners) {
+      listener(exitErr);
+    }
+    this.exitListeners.clear();
+  }
+
   private async ensureReady(): Promise<void> {
-    if (this.proc && this.ready) return;
+    if (this.proc && this.ready) {
+      if (this.needsFlush) {
+        await this.flushUci();
+      }
+      return;
+    }
     if (this.initPromise) return this.initPromise;
+
+    if (!fs.existsSync(STOCKFISH_BIN)) {
+      throw new Error('ملف محرك Stockfish غير موجود في node_modules/stockfish.');
+    }
 
     this.initPromise = new Promise<void>((resolve, reject) => {
       const proc = spawn(process.execPath, [STOCKFISH_BIN], {
@@ -114,13 +138,37 @@ class StockfishUciEngine {
       });
       this.proc = proc;
       this.ready = false;
+      this.needsFlush = false;
       this.buffer = '';
 
       let gotUciOk = false;
-      const timeout = setTimeout(() => {
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.lineListeners.delete(onLine);
+        this.exitListeners.delete(onEarlyExit);
+      };
+
+      const fail = (err: Error) => {
+        if (settled) return;
+        settled = true;
         cleanup();
-        reject(new Error('Stockfish UCI initialization timed out'));
+        reject(err);
+      };
+
+      const timeout = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {
+          // ignore kill error
+        }
+        fail(new Error('انتهت مهلة تهيئة محرك Stockfish UCI.'));
       }, 10000);
+
+      const onEarlyExit = (err: Error) => {
+        fail(err);
+      };
 
       const onLine = (line: string) => {
         if (line === 'uciok' && !gotUciOk) {
@@ -129,17 +177,26 @@ class StockfishUciEngine {
           proc.stdin.write('isready\n');
         } else if (line === 'readyok') {
           this.ready = true;
-          cleanup();
-          resolve();
+          if (!settled) {
+            settled = true;
+            cleanup();
+            resolve();
+          }
         }
       };
 
-      const cleanup = () => {
-        clearTimeout(timeout);
-        this.lineListeners.delete(onLine);
-      };
-
       this.lineListeners.add(onLine);
+      this.exitListeners.add(onEarlyExit);
+
+      proc.stdin.on('error', (err) => {
+        console.error('[Stockfish stdin error]', err.message);
+      });
+
+      proc.on('error', (err) => {
+        console.error('[Stockfish spawn error]', err.message);
+        this.resetProcessState(new Error(`تعذر تشغيل محرك Stockfish: ${err.message}`));
+        fail(new Error(`تعذر تشغيل محرك Stockfish: ${err.message}`));
+      });
 
       proc.stdout.on('data', (chunk: Buffer) => {
         this.buffer += chunk.toString('utf8');
@@ -148,7 +205,7 @@ class StockfishUciEngine {
         for (const raw of lines) {
           const trimmed = raw.trim();
           if (!trimmed) continue;
-          for (const listener of this.lineListeners) {
+          for (const listener of Array.from(this.lineListeners)) {
             listener(trimmed);
           }
         }
@@ -159,10 +216,12 @@ class StockfishUciEngine {
         if (msg) console.error('[Stockfish stderr]', msg);
       });
 
-      proc.on('exit', () => {
-        this.proc = null;
-        this.ready = false;
-        this.initPromise = null;
+      proc.on('exit', (code, signal) => {
+        const reason = new Error(
+          `أُغلقت عملية محرك Stockfish (code=${code ?? 'null'}, signal=${signal ?? 'none'}).`
+        );
+        this.resetProcessState(reason);
+        fail(reason);
       });
 
       proc.stdin.write('uci\n');
@@ -173,6 +232,43 @@ class StockfishUciEngine {
     } finally {
       this.initPromise = null;
     }
+  }
+
+  private async flushUci(): Promise<void> {
+    if (!this.proc) return;
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timeout);
+        this.lineListeners.delete(onLine);
+        this.exitListeners.delete(onExit);
+      };
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        this.needsFlush = false;
+        reject(new Error('انتهت مهلة مزامنة محرك Stockfish.'));
+      }, 5000);
+      const onExit = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(err);
+      };
+      const onLine = (line: string) => {
+        if (line === 'readyok') {
+          if (settled) return;
+          settled = true;
+          this.needsFlush = false;
+          cleanup();
+          resolve();
+        }
+      };
+      this.lineListeners.add(onLine);
+      this.exitListeners.add(onExit);
+      this.proc!.stdin.write('isready\n');
+    });
   }
 
   public analyze(
@@ -234,25 +330,49 @@ class StockfishUciEngine {
       await this.ensureReady();
       if (!this.proc) throw new Error('Stockfish process unavailable');
 
+      const safeDepth = Number.isFinite(depth) ? depth : 13;
+      const safeMultiPv = Number.isFinite(multiPv) ? multiPv : 3;
       const resolvedDepth =
-        autoDepthByElo && typeof playerElo === 'number' && !Number.isNaN(playerElo)
+        autoDepthByElo && typeof playerElo === 'number' && Number.isFinite(playerElo)
           ? eloToSearchDepth(playerElo)
-          : depth;
+          : safeDepth;
       const clampedDepth = Math.max(4, Math.min(20, Math.round(resolvedDepth)));
-      const clampedMultiPv = Math.max(1, Math.min(3, Math.round(multiPv)));
+      const clampedMultiPv = Math.max(1, Math.min(3, Math.round(safeMultiPv)));
       const uciLog: string[] = [];
-      if (autoDepthByElo && typeof playerElo === 'number') {
+      if (autoDepthByElo && typeof playerElo === 'number' && Number.isFinite(playerElo)) {
         uciLog.push(`> info string Elo ${Math.round(playerElo)} -> Auto Search Depth ${clampedDepth}`);
       }
       const pvMap = new Map<number, UciLineInfo>();
       const startTime = Date.now();
 
       return new Promise<StockfishAnalysisResult>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          this.proc?.stdin.write('stop\n');
+        let settled = false;
+
+        const cleanup = () => {
+          clearTimeout(timeout);
           this.lineListeners.delete(onLine);
-          reject(new Error('Stockfish search timed out'));
+          this.exitListeners.delete(onProcessExit);
+        };
+
+        const timeout = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          this.needsFlush = true;
+          try {
+            this.proc?.stdin.write('stop\n');
+          } catch {
+            // ignore write error on timeout
+          }
+          cleanup();
+          reject(new Error('انتهت مهلة تحليل محرك Stockfish.'));
         }, 15000);
+
+        const onProcessExit = (err: Error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(err);
+        };
 
         const onLine = (line: string) => {
           if (line.startsWith('info ')) {
@@ -263,6 +383,7 @@ class StockfishUciEngine {
             const multipvMatch = /\bmultipv (\d+)/.exec(line);
             const cpMatch = /\bscore cp (-?\d+)/.exec(line);
             const mateMatch = /\bscore mate (-?\d+)/.exec(line);
+            const isBound = /\b(?:upperbound|lowerbound)\b/.test(line);
             const nodesMatch = /\bnodes (\d+)/.exec(line);
             const npsMatch = /\bnps (\d+)/.exec(line);
             const timeMatch = /\btime (\d+)/.exec(line);
@@ -271,6 +392,11 @@ class StockfishUciEngine {
             const parsedDepth = depthMatch ? Number(depthMatch[1]) : 0;
             const parsedMultiPv = multipvMatch ? Number(multipvMatch[1]) : 1;
             const pvUci = pvMatch ? pvMatch[1].trim().split(/\s+/) : [];
+
+            const existing = pvMap.get(parsedMultiPv);
+            if (isBound && existing && existing.depth >= parsedDepth) {
+              return;
+            }
 
             let scoreType: 'cp' | 'mate' = 'cp';
             let rawScore = 0;
@@ -297,8 +423,9 @@ class StockfishUciEngine {
               timeMs: timeMatch ? Number(timeMatch[1]) : Date.now() - startTime,
             });
           } else if (line.startsWith('bestmove ')) {
-            clearTimeout(timeout);
-            this.lineListeners.delete(onLine);
+            if (settled) return;
+            settled = true;
+            cleanup();
             uciLog.push(`< ${line}`);
 
             const parts = line.split(/\s+/);
@@ -343,15 +470,24 @@ class StockfishUciEngine {
         };
 
         this.lineListeners.add(onLine);
+        this.exitListeners.add(onProcessExit);
 
         const cmds = [
           `setoption name MultiPV value ${clampedMultiPv}`,
           `position fen ${fen}`,
           `go depth ${clampedDepth}`,
         ];
-        for (const cmd of cmds) {
-          uciLog.push(`> ${cmd}`);
-          this.proc!.stdin.write(`${cmd}\n`);
+        try {
+          for (const cmd of cmds) {
+            uciLog.push(`> ${cmd}`);
+            this.proc!.stdin.write(`${cmd}\n`);
+          }
+        } catch (err) {
+          if (!settled) {
+            settled = true;
+            cleanup();
+            reject(err instanceof Error ? err : new Error('تعذر إرسال الأوامر إلى محرك Stockfish.'));
+          }
         }
       });
     };
@@ -386,24 +522,27 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '4mb' }));
 
+  // Engine Health Check Endpoint
+  app.get('/api/stockfish/health', (_req: Request, res: Response) => {
+    res.json({
+      ok: fs.existsSync(STOCKFISH_BIN),
+      engine: 'stockfish-19-lite-single',
+    });
+  });
+
   // Stockfish UCI Analysis Endpoint
   app.post('/api/stockfish/analyze', async (req: Request, res: Response) => {
     try {
-      const {
-        fen,
-        depth = 13,
-        multiPv = 3,
-        playerElo,
-        autoDepthByElo = false,
-      } = req.body as {
-        fen?: string;
-        depth?: number;
-        multiPv?: number;
-        playerElo?: number;
-        autoDepthByElo?: boolean;
+      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+        fen?: unknown;
+        depth?: unknown;
+        multiPv?: unknown;
+        playerElo?: unknown;
+        autoDepthByElo?: unknown;
       };
 
-      if (!fen || typeof fen !== 'string') {
+      const fen = typeof body.fen === 'string' ? body.fen.trim() : '';
+      if (!fen) {
         res.status(400).json({ error: 'يجب إرسال وضعية FEN صالحة.' });
         return;
       }
@@ -416,14 +555,20 @@ async function startServer() {
         return;
       }
 
+      const rawDepth = Number(body.depth ?? 13);
+      const safeDepth = Number.isFinite(rawDepth) ? rawDepth : 13;
+      const rawMultiPv = Number(body.multiPv ?? 3);
+      const safeMultiPv = Number.isFinite(rawMultiPv) ? rawMultiPv : 3;
+      const rawElo = body.playerElo !== undefined ? Number(body.playerElo) : undefined;
       const parsedElo =
-        typeof playerElo === 'number' && !Number.isNaN(playerElo) ? playerElo : undefined;
+        typeof rawElo === 'number' && Number.isFinite(rawElo) ? rawElo : undefined;
+
       const result = await stockfishEngine.analyze(
         fen,
-        Number(depth),
-        Number(multiPv),
+        safeDepth,
+        safeMultiPv,
         parsedElo,
-        Boolean(autoDepthByElo)
+        Boolean(body.autoDepthByElo)
       );
       res.json(result);
     } catch (error) {
@@ -436,17 +581,7 @@ async function startServer() {
   // Gemini Grandmaster Arabic Commentary Endpoint
   app.post('/api/gemini/explain', async (req: Request, res: Response) => {
     try {
-      const {
-        fen,
-        lastMoveSan,
-        lastMoveUci,
-        bestMoveSan,
-        bestMoveUci,
-        evaluationLabel,
-        turn,
-        topLineSan,
-        playerElo,
-      } = req.body as {
+      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
         fen?: string;
         lastMoveSan?: string;
         lastMoveUci?: string;
@@ -457,6 +592,17 @@ async function startServer() {
         topLineSan?: string[];
         playerElo?: number;
       };
+      const {
+        fen,
+        lastMoveSan,
+        lastMoveUci,
+        bestMoveSan,
+        bestMoveUci,
+        evaluationLabel,
+        turn,
+        topLineSan,
+        playerElo,
+      } = body;
 
       if (!fen) {
         res.status(400).json({ error: 'الوضعية FEN مطلوبة للشرح.' });
@@ -647,11 +793,28 @@ async function startServer() {
         return;
       }
 
-      const parsed = JSON.parse(rawText) as {
+      const cleanJsonText = rawText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+      let parsed: {
         ranks?: string[];
         turn?: string;
         notes?: string;
       };
+      try {
+        parsed = JSON.parse(cleanJsonText) as {
+          ranks?: string[];
+          turn?: string;
+          notes?: string;
+        };
+      } catch {
+        res.status(502).json({
+          error: 'أعاد نموذج الرؤية استجابة غير صالحة (ليست JSON). يرجى إعادة المحاولة.',
+        });
+        return;
+      }
 
       if (!Array.isArray(parsed.ranks) || parsed.ranks.length !== 8) {
         res.status(422).json({
@@ -867,6 +1030,35 @@ async function startServer() {
       res.status(500).json({ error: message });
     }
   });
+
+  // Ensure unmatched /api/* routes always return valid JSON (never HTML fallback)
+  app.use('/api', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'نقطة نهاية API غير موجودة.' });
+  });
+
+  // Global Express JSON Error Handler for /api/* (e.g., malformed JSON body or 413 payload errors)
+  app.use(
+    (
+      err: unknown,
+      req: Request,
+      res: Response,
+      next: express.NextFunction
+    ) => {
+      if (!req.originalUrl.startsWith('/api')) {
+        next(err);
+        return;
+      }
+      const typed = err as { status?: number; type?: string; message?: string };
+      const status = typeof typed?.status === 'number' && typed.status >= 400 ? typed.status : 500;
+      const errorMessage =
+        typed?.type === 'entity.parse.failed'
+          ? 'بيانات الطلب المرسلة ليست بصيغة JSON صالحة.'
+          : typed?.type === 'entity.too.large'
+          ? 'حجم البيانات المرسلة يتجاوز الحد المسموح.'
+          : 'حدث خطأ غير متوقع في خادم المحرك.';
+      res.status(status).json({ error: errorMessage });
+    }
+  );
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
