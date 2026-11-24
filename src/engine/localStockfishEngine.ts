@@ -78,6 +78,10 @@ class LocalStockfishEngine {
     this.errorListeners.clear();
   }
 
+  public clearCache(): void {
+    this.resetWorker(new Error('تمت إعادة تهيئة ذاكرة محرك Stockfish.'));
+  }
+
   private async startWorkerScript(scriptUrl: string): Promise<void> {
     if (typeof globalThis.Worker === 'undefined') {
       throw new Error('المتصفح أو WebView لا يدعم Web Workers لتشغيل Stockfish محلياً.');

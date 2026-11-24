@@ -18,7 +18,7 @@ export default defineConfig(() => {
           name: 'رَصْد الشطرنج — Stockfish UCI',
           short_name: 'رصد الشطرنج',
           description:
-            'تطبيق تحليل شطرنج مباشر عبر الكاميرا أو مشاركة الشاشة مع محرك Stockfish 19 عبر UCI والشرح الصوتي.',
+            'تطبيق تحليل شطرنج مباشر عبر الكاميرا أو البث التفاعلي مع محرك Stockfish 19 عبر UCI والشرح الصوتي.',
           theme_color: '#0B0E14',
           background_color: '#0B0E14',
           display: 'standalone',

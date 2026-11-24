@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 import {
   Camera,
-  Monitor,
   Play,
   Square,
   Upload,
@@ -13,8 +12,13 @@ import {
   VolumeX,
   ScanSearch,
   Loader2,
+  ShieldCheck,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
 import type {
+  BoardOrientation,
+  CapturedBoardPreview,
   CaptureSource,
   Point2D,
   RoiQuad,
@@ -54,6 +58,14 @@ interface LiveVisionStageProps {
   isScanningFen: boolean;
   scanError: string | null;
   onScanBoardFen: () => void;
+  orientation: BoardOrientation;
+  onChangeOrientation: (orientation: BoardOrientation) => void;
+  opponentMoveOnly: boolean;
+  onToggleOpponentMoveOnly: () => void;
+  capturedPreview: CapturedBoardPreview | null;
+  isAnalyzingBestMove: boolean;
+  onClearCapturedPreview: () => void;
+  onApplyBestMoveFromPreview: (uci: string) => void;
 }
 
 const DEFAULT_CORNER_LABELS = ['أعلى يسار', 'أعلى يمين', 'أسفل يمين', 'أسفل يسار'];
@@ -89,6 +101,14 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
   isScanningFen,
   scanError,
   onScanBoardFen,
+  orientation,
+  onChangeOrientation,
+  opponentMoveOnly,
+  onToggleOpponentMoveOnly,
+  capturedPreview,
+  isAnalyzingBestMove,
+  onClearCapturedPreview,
+  onApplyBestMoveFromPreview,
 }) => {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -161,18 +181,6 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           >
             <Camera className="w-3.5 h-3.5" />
             <span>الكاميرا</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSelectSource('screen')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-              source === 'screen'
-                ? 'bg-slate-800 text-cyan-300'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5" />
-            <span>مشاركة الشاشة</span>
           </button>
           <button
             type="button"
@@ -316,10 +324,10 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
         {(errorMsg || scanError) && (
           <div className="mb-3 px-3 py-2 rounded-md border border-rose-500/40 bg-rose-950/30 text-xs text-rose-200 flex flex-wrap items-center justify-between gap-2">
             <span>{scanError ?? errorMsg}</span>
-            {errorMsg && (source === 'camera' || source === 'screen') && (
+            {errorMsg && source === 'camera' && (
               <button
                 type="button"
-                onClick={() => void onSelectSource(source)}
+                onClick={() => void onSelectSource('camera')}
                 className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-100 font-medium whitespace-nowrap shrink-0"
               >
                 إعادة المحاولة
@@ -336,30 +344,24 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           onPointerLeave={handlePointerUpStage}
           className="relative w-full aspect-square max-w-[520px] mx-auto bg-[#070A10]/55 border border-slate-700/60 rounded-lg overflow-hidden select-none"
         >
-          {/* Underlying raw video element (camera/screen) */}
+          {/* Underlying raw video element (camera) */}
           <video
             ref={videoRef}
             playsInline
             muted
             autoPlay
             className={`absolute inset-0 w-full h-full object-contain ${
-              (source === 'camera' || source === 'screen') && isStreaming && viewMode === 'original'
+              source === 'camera' && isStreaming && viewMode === 'original'
                 ? 'opacity-100'
                 : 'hidden'
             }`}
           />
 
-          {(source === 'camera' || source === 'screen') && !isStreaming && viewMode === 'original' && (
+          {source === 'camera' && !isStreaming && viewMode === 'original' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6 text-slate-400">
-              {source === 'camera' ? (
-                <Camera className="w-9 h-9 text-cyan-400/70" />
-              ) : (
-                <Monitor className="w-9 h-9 text-cyan-400/70" />
-              )}
+              <Camera className="w-9 h-9 text-cyan-400/70" />
               <span className="text-xs font-medium text-slate-300">
-                {source === 'camera'
-                  ? 'بث الكاميرا متوقف حالياً'
-                  : 'مشاركة الشاشة متوقفة حالياً'}
+                بث الكاميرا متوقف حالياً
               </span>
             </div>
           )}
@@ -446,6 +448,158 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
               {lastDetectedInfo ?? (isStreaming ? 'رصد نشط' : 'متوقف')}
             </span>
           </div>
+        </div>
+
+        {/* Dedicated Capture-for-Preview & UCI Best Move Action Bar Directly Under Camera Screen */}
+        <div className="mt-3 p-3 rounded-lg border border-cyan-500/30 bg-[#0B0E14]/60 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={onScanBoardFen}
+              disabled={isScanningFen}
+              className="flex-1 min-w-[220px] inline-flex items-center justify-center gap-2 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:pointer-events-none rounded-lg transition-colors shadow-sm"
+            >
+              {isScanningFen ? (
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              ) : (
+                <Camera className="w-4 h-4 shrink-0" />
+              )}
+              <span>
+                {isScanningFen
+                  ? 'جاري التقاط المصفوفة واستخراج أفضل نقلة...'
+                  : 'التقاط صورة للمعاينة واستخراج أفضل نقلة'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onToggleOpponentMoveOnly}
+              title="تجاهل الحركات العشوائية وحصر التحليل بنقلة الخصم لتوليد الرد الأمثل عبر UCI"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                opponentMoveOnly
+                  ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
+                  : 'border-slate-700 bg-slate-900/60 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>نقلة الخصم حصراً</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">منطقتك (النصف السفلي):</span>
+              <div className="inline-flex rounded-md border border-slate-700/80 bg-[#070A10]/80 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => onChangeOrientation('white')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                    orientation === 'white'
+                      ? 'bg-slate-100 text-slate-950'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  الأبيض
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeOrientation('black')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                    orientation === 'black'
+                      ? 'bg-cyan-500 text-slate-950'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  الأسود (قلب المصفوفة)
+                </button>
+              </div>
+            </div>
+
+            <span className="text-slate-400">
+              {orientation === 'black'
+                ? 'تُقلب مصفوفة 8×8 برمجياً لتحليل الموقف من منظور الأسود'
+                : 'النصف السفلي للأبيض · تحليل مباشر عبر UCI'}
+            </span>
+          </div>
+
+          {/* Captured Preview & Extracted Best UCI Move Result */}
+          {capturedPreview && (
+            <div className="pt-2.5 border-t border-slate-700/60 flex items-start gap-3">
+              <img
+                src={capturedPreview.imageUrl}
+                alt="معاينة الصورة الملتقطة للرقعة"
+                className="w-20 h-20 rounded-md object-cover border border-cyan-500/40 shrink-0 bg-slate-950"
+              />
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>معاينة الصورة الملتقطة ({capturedPreview.capturedAt})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onClearCapturedPreview}
+                    aria-label="إغلاق المعاينة"
+                    className="p-0.5 text-slate-400 hover:text-white rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="text-[11px] text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span>
+                    {capturedPreview.flippedForBlack
+                      ? 'الأسود (النصف السفلي · مَقلوب 180°)'
+                      : 'الأبيض (النصف السفلي)'}
+                  </span>
+                  {capturedPreview.detectedOpponentMove && (
+                    <span className="text-amber-300 font-mono" dir="ltr">
+                      نقلة الخصم: {capturedPreview.detectedOpponentMove.san} (
+                      {capturedPreview.detectedOpponentMove.uci})
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {isAnalyzingBestMove && !capturedPreview.bestMoveUci ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-300">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      <span>جاري توليد الرد الأمثل عبر UCI...</span>
+                    </span>
+                  ) : capturedPreview.bestMoveUci ? (
+                    <>
+                      <div className="text-xs text-slate-200">
+                        أفضل رد (UCI):{' '}
+                        <strong className="font-mono text-emerald-400" dir="ltr">
+                          {capturedPreview.bestMoveSan ?? capturedPreview.bestMoveUci} (
+                          {capturedPreview.bestMoveUci})
+                        </strong>
+                        {capturedPreview.evaluationLabel && (
+                          <span className="ms-1.5 text-[11px] font-mono text-slate-400" dir="ltr">
+                            [{capturedPreview.evaluationLabel}]
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          capturedPreview.bestMoveUci &&
+                          onApplyBestMoveFromPreview(capturedPreview.bestMoveUci)
+                        }
+                        className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded transition-colors shrink-0"
+                      >
+                        تطبيق النقلة
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-slate-400">
+                      الموقف جاهز على الرقعة الرقمية
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Virtual Source Interactive Controls (only shown when source === 'virtual') */}

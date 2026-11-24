@@ -722,10 +722,17 @@ async function startServer() {
   // Gemini Vision Board-to-FEN Position Scanner Endpoint
   app.post('/api/gemini/board-fen', async (req: Request, res: Response) => {
     try {
-      const { imageBase64, mimeType = 'image/jpeg' } = req.body as {
+      const {
+        imageBase64,
+        mimeType = 'image/jpeg',
+        playerColor = 'white',
+      } = req.body as {
         imageBase64?: string;
         mimeType?: string;
+        playerColor?: 'white' | 'black';
       };
+
+      const isBlackPerspective = playerColor === 'black';
 
       if (!imageBase64 || typeof imageBase64 !== 'string') {
         res.status(400).json({ error: 'بيانات الصورة مطلوبة لقراءة وضعية الرقعة.' });
@@ -751,12 +758,14 @@ async function startServer() {
             },
             {
               text: [
-                'Analyze this chessboard image carefully square by square (8 rows x 8 columns).',
-                'The image has already been oriented so that Rank 8 (a8..h8) is the TOP row of the 8x8 board, Rank 1 (a1..h1) is the BOTTOM row, file a is on the LEFT, and file h is on the RIGHT.',
-                'Even if there is small UI margin or phone border around the grid, locate the exact 8x8 chessboard squares and read every square accurately.',
-                'Use standard FEN piece letters: uppercase PNBRQK for White pieces (lighter color), lowercase pnbrqk for Black pieces (darker color), and digits 1-8 for consecutive empty squares in each rank.',
-                'Return "ranks" as an array of exactly 8 strings (rank 8 first down to rank 1), where each rank string sums to exactly 8 squares.',
-                'Also determine whose turn it is ("w" or "b") if visible from move highlights or active clock; default to "w" if uncertain.',
+                'Analyze this chessboard image carefully square by square as an 8x8 matrix in visual screen order.',
+                'Read strictly from the TOP row of the image (index 0) down to the BOTTOM row of the image (index 7), and from LEFT column (index 0) to RIGHT column (index 7).',
+                'Do NOT mentally rotate or flip the board even if Black pieces are at the bottom — report the exact pieces as they appear visually in the image.',
+                'The bottom half of the image (rows 4..7) represents the user side, and the top half (rows 0..3) represents the opponent side.',
+                'Use standard FEN piece letters: uppercase PNBRQK for White pieces (lighter color), lowercase pnbrqk for Black pieces (darker color), and digits 1-8 for consecutive empty squares in each row (or "." per empty square).',
+                'Return "ranks" as an array of exactly 8 strings (top visual row down to bottom visual row), where each row sums to exactly 8 squares.',
+                `The player is playing as ${isBlackPerspective ? 'Black ("b")' : 'White ("w")'} from the bottom half. Ignore random hand shadows or borders.`,
+                'Set "turn" to whose move it appears to be ("w" or "b"), preferring the player side if the opponent just moved.',
               ].join('\n'),
             },
           ],
@@ -764,7 +773,7 @@ async function startServer() {
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.MEDIUM },
           systemInstruction:
-            'You are a precision chess board computer-vision parser. Always inspect all 64 squares carefully and return strictly valid FEN rank strings summing to 8.',
+            'You are a precision chess board computer-vision parser. Always read the 8x8 grid strictly in visual top-to-bottom, left-to-right order without rotating coordinates.',
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
@@ -772,7 +781,8 @@ async function startServer() {
               ranks: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING },
-                description: 'Exactly 8 FEN rank strings from rank 8 (top) to rank 1 (bottom).',
+                description:
+                  'Exactly 8 row strings from visual top row (index 0) to visual bottom row (index 7), left to right.',
               },
               turn: {
                 type: Type.STRING,
@@ -823,11 +833,10 @@ async function startServer() {
         return;
       }
 
-      // Normalize and validate each rank sums to 8
-      const normalizedRanks: string[] = [];
+      // Parse visual screen-space 8x8 matrix (top-to-bottom, left-to-right)
+      const screenMatrix: string[][] = [];
       let whiteKings = 0;
       let blackKings = 0;
-      const expandedGrid: string[][] = [];
 
       for (const rawRank of parsed.ranks) {
         const cleanRank = String(rawRank).trim();
@@ -836,6 +845,8 @@ async function startServer() {
           if (ch >= '1' && ch <= '8') {
             const empties = Number(ch);
             for (let k = 0; k < empties; k++) expanded.push('');
+          } else if (ch === '.' || ch === '_' || ch === '-') {
+            expanded.push('');
           } else if ('pnbrqkPNBRQK'.includes(ch)) {
             if (ch === 'K') whiteKings++;
             if (ch === 'k') blackKings++;
@@ -848,11 +859,27 @@ async function startServer() {
           });
           return;
         }
-        expandedGrid.push(expanded);
-        // Re-encode canonical rank string
+        screenMatrix.push(expanded);
+      }
+
+      if (whiteKings !== 1 || blackKings !== 1) {
+        res.status(422).json({
+          error: 'لم يتم التعرف على الملكين بشكل صحيح. تأكد من شمول كامل الرقعة داخل الإطار السماوي.',
+        });
+        return;
+      }
+
+      // Programmatically flip 180 degrees when playing Black (bottom half is always player's area)
+      const canonicalGrid: string[][] = isBlackPerspective
+        ? Array.from({ length: 8 }, (_, r) =>
+            Array.from({ length: 8 }, (_, c) => screenMatrix[7 - r][7 - c])
+          )
+        : screenMatrix;
+
+      const normalizedRanks: string[] = canonicalGrid.map((row) => {
         let encoded = '';
         let emptyCount = 0;
-        for (const sq of expanded) {
+        for (const sq of row) {
           if (sq === '') {
             emptyCount++;
           } else {
@@ -864,33 +891,29 @@ async function startServer() {
           }
         }
         if (emptyCount > 0) encoded += String(emptyCount);
-        normalizedRanks.push(encoded);
-      }
-
-      if (whiteKings !== 1 || blackKings !== 1) {
-        res.status(422).json({
-          error: 'لم يتم التعرف على الملكين بشكل صحيح. تأكد من شمول كامل الرقعة داخل الإطار السماوي.',
-        });
-        return;
-      }
+        return encoded;
+      });
 
       const placement = normalizedRanks.join('/');
 
       // Infer plausible castling rights from actual king/rook positions
       let castling = '';
-      if (expandedGrid[7]?.[4] === 'K') {
-        if (expandedGrid[7]?.[7] === 'R') castling += 'K';
-        if (expandedGrid[7]?.[0] === 'R') castling += 'Q';
+      if (canonicalGrid[7]?.[4] === 'K') {
+        if (canonicalGrid[7]?.[7] === 'R') castling += 'K';
+        if (canonicalGrid[7]?.[0] === 'R') castling += 'Q';
       }
-      if (expandedGrid[0]?.[4] === 'k') {
-        if (expandedGrid[0]?.[7] === 'r') castling += 'k';
-        if (expandedGrid[0]?.[0] === 'r') castling += 'q';
+      if (canonicalGrid[0]?.[4] === 'k') {
+        if (canonicalGrid[0]?.[7] === 'r') castling += 'k';
+        if (canonicalGrid[0]?.[0] === 'r') castling += 'q';
       }
       if (!castling) castling = '-';
 
-      const preferredTurn: 'w' | 'b' = parsed.turn === 'b' ? 'b' : 'w';
-      const candidateA = `${placement} ${preferredTurn} ${castling} - 0 1`;
-      const altTurn: 'w' | 'b' = preferredTurn === 'w' ? 'b' : 'w';
+      // Prefer the player's turn to immediately generate the optimal UCI reply
+      const playerTurn: 'w' | 'b' = isBlackPerspective ? 'b' : 'w';
+      const preferredTurn: 'w' | 'b' =
+        parsed.turn === 'w' || parsed.turn === 'b' ? parsed.turn : playerTurn;
+      const candidateA = `${placement} ${playerTurn} ${castling} - 0 1`;
+      const altTurn: 'w' | 'b' = playerTurn === 'w' ? 'b' : 'w';
       const candidateB = `${placement} ${altTurn} ${castling} - 0 1`;
 
       let validFen: string | null = null;
@@ -899,7 +922,7 @@ async function startServer() {
       try {
         new Chess(candidateA);
         validFen = candidateA;
-        resolvedTurn = preferredTurn;
+        resolvedTurn = playerTurn;
       } catch {
         try {
           new Chess(candidateB);
@@ -920,6 +943,8 @@ async function startServer() {
       res.json({
         fen: validFen,
         turn: resolvedTurn,
+        screenMatrix,
+        flippedForBlack: isBlackPerspective,
         notes: parsed.notes ?? 'تمت قراءة الوضعية بنجاح.',
       });
     } catch (error) {

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
-import { Copy, Check, Download } from 'lucide-react';
+import { Copy, Check, Download, Trash2, Loader2 } from 'lucide-react';
 import { LiveVisionStage } from './components/LiveVisionStage.tsx';
 import { DigitalBoard } from './components/DigitalBoard.tsx';
 import { AnalysisAndVoicePanel } from './components/AnalysisAndVoicePanel.tsx';
 import { ResourceTradeoffConsole } from './components/ResourceTradeoffConsole.tsx';
 import { PWAInstallButton } from './components/PWAInstallButton.tsx';
 import { OpenCvChessPipeline, computeFitRoi } from './vision/opencvPipeline.ts';
+import { analyzeBoardMatrixPerspective, type BoardMatrix8x8 } from './vision/boardMatrix.ts';
 import { renderVirtualBoardToCanvas, SAMPLE_GAMES } from './vision/virtualBoardRenderer.ts';
 import { playMoveTapSound, unlockAudioContext } from './utils/soundEffects.ts';
 import { localStockfishEngine } from './engine/localStockfishEngine.ts';
 import type {
+  CapturedBoardPreview,
   CaptureSource,
   FrameTelemetry,
   MoveRecord,
@@ -141,6 +143,10 @@ export default function App() {
   const [uploadedImageTick, setUploadedImageTick] = useState<number>(0);
   const [isScanningFen, setIsScanningFen] = useState<boolean>(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [opponentMoveOnly, setOpponentMoveOnly] = useState<boolean>(false);
+  const [capturedPreview, setCapturedPreview] = useState<CapturedBoardPreview | null>(null);
+  const [isClearingCache, setIsClearingCache] = useState<boolean>(false);
+  const [cacheNotice, setCacheNotice] = useState<string | null>(null);
 
   // Stockfish UCI State (Elo-driven automatic Search Depth)
   const [playerElo, setPlayerElo] = useState<number>(1600);
@@ -270,7 +276,11 @@ export default function App() {
 
   // Run Stockfish 19 UCI analysis whenever FEN, searchDepth, playerElo, or autoDepthByElo changes
   const runStockfishAnalysis = useCallback(
-    async (targetFen: string, depth: number, moveCtxForSpeech: { san: string; uci: string } | null) => {
+    async (
+      targetFen: string,
+      depth: number,
+      moveCtxForSpeech: { san: string; uci: string } | null
+    ): Promise<StockfishAnalysisResult | null> => {
       if (analyzeAbortRef.current) {
         analyzeAbortRef.current.abort();
       }
@@ -327,7 +337,7 @@ export default function App() {
           }
         }
 
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) return null;
         setAnalysis(typed);
 
         // Update latest move evaluation label in history
@@ -344,10 +354,12 @@ export default function App() {
           autoSpeakPendingRef.current = false;
           void triggerExplainAndSpeak(typed, moveCtxForSpeech);
         }
+        return typed;
       } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
+        if ((err as Error).name === 'AbortError') return null;
         setAnalysisError(err instanceof Error ? err.message : 'تعذر الاتصال بمحرك Stockfish.');
         autoSpeakPendingRef.current = false;
+        return null;
       } finally {
         if (analyzeAbortRef.current === controller) {
           setIsAnalyzing(false);
@@ -429,108 +441,98 @@ export default function App() {
     [autoSpeak, moveSoundEnabled, runStockfishAnalysis, searchDepth, voiceCoachEnabled]
   );
 
-  // Start Camera or Screen Share stream
-  const startExternalStream = useCallback(
-    async (targetSource: 'camera' | 'screen') => {
-      setStreamError(null);
-      stopMediaTracks();
+  // Start Camera stream
+  const startCameraStream = useCallback(async () => {
+    setStreamError(null);
+    stopMediaTracks();
 
-      try {
-        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-          throw new Error('المتصفح أو التطبيق لا يدعم واجهات التقاط الوسائط في هذا السياق.');
-        }
+    try {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        throw new Error('المتصفح أو التطبيق لا يدعم واجهات التقاط الوسائط في هذا السياق.');
+      }
 
-        const acquireCameraStream = async (): Promise<MediaStream> => {
-          const attempts: MediaStreamConstraints[] = [
-            {
-              video: {
-                facingMode: { ideal: 'environment' },
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                frameRate: { ideal: Math.min(config.targetFps, 30), max: 60 },
-              },
-              audio: false,
+      const acquireCameraStream = async (): Promise<MediaStream> => {
+        const attempts: MediaStreamConstraints[] = [
+          {
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: Math.min(config.targetFps, 30), max: 60 },
             },
-            {
-              video: { facingMode: 'environment' },
-              audio: false,
-            },
-            {
-              video: true,
-              audio: false,
-            },
-          ];
+            audio: false,
+          },
+          {
+            video: { facingMode: 'environment' },
+            audio: false,
+          },
+          {
+            video: true,
+            audio: false,
+          },
+        ];
 
-          let lastErr: unknown;
-          for (const constraints of attempts) {
-            try {
-              return await navigator.mediaDevices.getUserMedia(constraints);
-            } catch (err) {
-              lastErr = err;
-              const name = (err as { name?: string })?.name ?? '';
-              if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-                throw err;
-              }
+        let lastErr: unknown;
+        for (const constraints of attempts) {
+          try {
+            return await navigator.mediaDevices.getUserMedia(constraints);
+          } catch (err) {
+            lastErr = err;
+            const name = (err as { name?: string })?.name ?? '';
+            if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+              throw err;
             }
           }
-          throw lastErr;
-        };
+        }
+        throw lastErr;
+      };
 
-        const stream =
-          targetSource === 'camera'
-            ? await acquireCameraStream()
-            : await navigator.mediaDevices.getDisplayMedia({
-                video: { frameRate: { ideal: config.targetFps, max: 60 } },
-                audio: false,
-              });
+      const stream = await acquireCameraStream();
 
-        mediaStreamRef.current = stream;
-        if (videoRef.current) {
-          const vid = videoRef.current;
-          vid.srcObject = stream;
-          vid.onloadedmetadata = () => {
-            if (vid.videoWidth > 0 && vid.videoHeight > 0) {
-              setRoi(computeFitRoi(vid.videoWidth, vid.videoHeight, 1));
-              pipelineRef.current?.resetBaseline();
-            }
-          };
-          await vid.play();
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        const vid = videoRef.current;
+        vid.srcObject = stream;
+        vid.onloadedmetadata = () => {
           if (vid.videoWidth > 0 && vid.videoHeight > 0) {
             setRoi(computeFitRoi(vid.videoWidth, vid.videoHeight, 1));
+            pipelineRef.current?.resetBaseline();
           }
+        };
+        await vid.play();
+        if (vid.videoWidth > 0 && vid.videoHeight > 0) {
+          setRoi(computeFitRoi(vid.videoWidth, vid.videoHeight, 1));
         }
-
-        // Listen for user ending screen share from browser chrome
-        const videoTrack = stream.getVideoTracks()[0];
-        if (videoTrack) {
-          videoTrack.onended = () => {
-            setIsStreaming(false);
-            stopMediaTracks();
-          };
-        }
-
-        pipelineRef.current?.resetBaseline();
-        setIsStreaming(true);
-      } catch (err) {
-        const errName = (err as { name?: string })?.name ?? '';
-        const rawMsg = err instanceof Error ? err.message : '';
-        const isDenied =
-          errName === 'NotAllowedError' ||
-          errName === 'PermissionDeniedError' ||
-          /permission|denied/i.test(rawMsg);
-        const friendlyMsg = isDenied
-          ? 'تم رفض إذن الكاميرا. اسمح للتطبيق بالوصول إلى الكاميرا من إعدادات الهاتف ثم اضغط «إعادة المحاولة».'
-          : errName === 'NotFoundError' || errName === 'DevicesNotFoundError'
-          ? 'لم يتم العثور على كاميرا متصلة على هذا الجهاز.'
-          : errName === 'NotReadableError'
-          ? 'الكاميرا قيد الاستخدام حالياً بواسطة تطبيق آخر.'
-          : rawMsg || 'تعذر الوصول إلى الكاميرا أو مشاركة الشاشة.';
-        setStreamError(friendlyMsg);
-        setIsStreaming(false);
       }
-    },
-    [config.targetFps, stopMediaTracks]
-  );
+
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          setIsStreaming(false);
+          stopMediaTracks();
+        };
+      }
+
+      pipelineRef.current?.resetBaseline();
+      setIsStreaming(true);
+    } catch (err) {
+      const errName = (err as { name?: string })?.name ?? '';
+      const rawMsg = err instanceof Error ? err.message : '';
+      const isDenied =
+        errName === 'NotAllowedError' ||
+        errName === 'PermissionDeniedError' ||
+        /permission|denied/i.test(rawMsg);
+      const friendlyMsg = isDenied
+        ? 'تم رفض إذن الكاميرا. اسمح للتطبيق بالوصول إلى الكاميرا من إعدادات الهاتف ثم اضغط «إعادة المحاولة».'
+        : errName === 'NotFoundError' || errName === 'DevicesNotFoundError'
+        ? 'لم يتم العثور على كاميرا متصلة على هذا الجهاز.'
+        : errName === 'NotReadableError'
+        ? 'الكاميرا قيد الاستخدام حالياً بواسطة تطبيق آخر.'
+        : rawMsg || 'تعذر الوصول إلى الكاميرا.';
+      setStreamError(friendlyMsg);
+      setIsStreaming(false);
+    }
+  }, [config.targetFps, stopMediaTracks]);
 
   // Switch capture source
   const handleSelectSource = useCallback(
@@ -542,22 +544,24 @@ export default function App() {
 
       if (nextSource === 'virtual') {
         stopMediaTracks();
+        setOpponentMoveOnly(false);
         setRoi(DEFAULT_VIRTUAL_ROI);
         setIsStreaming(true);
-      } else if (nextSource === 'camera' || nextSource === 'screen') {
+      } else if (nextSource === 'camera') {
+        setOpponentMoveOnly(true);
         setRoi([
           { x: 0.22, y: 0.22 },
           { x: 0.78, y: 0.22 },
           { x: 0.78, y: 0.78 },
           { x: 0.22, y: 0.78 },
         ]);
-        await startExternalStream(nextSource);
+        await startCameraStream();
       } else {
         stopMediaTracks();
         setIsStreaming(false);
       }
     },
-    [startExternalStream, stopMediaTracks]
+    [startCameraStream, stopMediaTracks]
   );
 
   // Cleanup on unmount
@@ -605,7 +609,7 @@ export default function App() {
         srcElem = vCanvas;
         srcW = vCanvas.width;
         srcH = vCanvas.height;
-      } else if (source === 'camera' || source === 'screen') {
+      } else if (source === 'camera') {
         const vid = videoRef.current;
         if (!vid || vid.readyState < 2 || vid.videoWidth === 0) return;
         srcElem = vid;
@@ -629,7 +633,8 @@ export default function App() {
         config,
         viewMode,
         processedCanvasRef.current,
-        chessRef.current.fen()
+        chessRef.current.fen(),
+        opponentMoveOnly
       );
 
       // Throttle React telemetry & 8x8 matrix UI re-renders (~15Hz) so 60 FPS vision loop stays zero-jank
@@ -658,6 +663,7 @@ export default function App() {
     viewMode,
     virtualLastMove,
     simulateLightingNoise,
+    opponentMoveOnly,
     commitSynchronizedMove,
   ]);
 
@@ -736,7 +742,7 @@ export default function App() {
   };
 
   const applyCustomFen = useCallback(
-    (rawFen: string): boolean => {
+    (rawFen: string, skipAnalysis = false): boolean => {
       try {
         const nextChess = new Chess(rawFen);
         const canonical = nextChess.fen();
@@ -748,7 +754,9 @@ export default function App() {
         setMoveHistory([]);
         setScanError(null);
         pipelineRef.current?.captureBaselineNextFrame();
-        void runStockfishAnalysis(canonical, searchDepth, null);
+        if (!skipAnalysis) {
+          void runStockfishAnalysis(canonical, searchDepth, null);
+        }
         return true;
       } catch {
         return false;
@@ -782,7 +790,7 @@ export default function App() {
         srcW = vCanvas.width;
         srcH = vCanvas.height;
       }
-    } else if (source === 'camera' || source === 'screen') {
+    } else if (source === 'camera') {
       const vid = videoRef.current;
       if (vid && vid.readyState >= 2 && vid.videoWidth > 0) {
         srcElem = vid;
@@ -803,25 +811,73 @@ export default function App() {
       return;
     }
 
-    const dataUrl = pipeline.captureRoiDataUrl(srcElem, srcW, srcH, roi, config.orientation, 640);
+    // Capture raw screen-space ROI (bottom half = player area; Black flip happens programmatically on the 8x8 matrix)
+    const dataUrl = pipeline.captureRoiDataUrl(srcElem, srcW, srcH, roi, config.orientation, 640, true);
     if (!dataUrl) {
       setScanError('تعذر التقاط منطقة الرقعة (ROI).');
       return;
     }
+
+    const capturedAt = new Date().toLocaleTimeString('ar-EG', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    setCapturedPreview({
+      imageUrl: dataUrl,
+      capturedAt,
+      orientation: config.orientation,
+      flippedForBlack: config.orientation === 'black',
+      detectedOpponentMove: null,
+      bestMoveSan: null,
+      bestMoveUci: null,
+      evaluationLabel: null,
+      fen: chessRef.current.fen(),
+    });
 
     setIsScanningFen(true);
     try {
       const res = await fetch('/api/gemini/board-fen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: dataUrl, mimeType: 'image/jpeg' }),
+        body: JSON.stringify({
+          imageBase64: dataUrl,
+          mimeType: 'image/jpeg',
+          playerColor: config.orientation,
+        }),
       });
-      const data = await parseJsonResponse<{ fen: string; turn?: 'w' | 'b' }>(
-        res,
-        'تعذر قراءة وضعية الرقعة.'
-      );
+      const data = await parseJsonResponse<{
+        fen: string;
+        turn?: 'w' | 'b';
+        screenMatrix?: BoardMatrix8x8;
+        flippedForBlack?: boolean;
+      }>(res, 'تعذر قراءة وضعية الرقعة.');
 
-      const applied = applyCustomFen(data.fen);
+      let resolvedFen = data.fen;
+      let resolvedTurn: 'w' | 'b' = data.turn === 'b' ? 'b' : 'w';
+      let flippedForBlack = config.orientation === 'black';
+      let detectedOpponentMove: { san: string; uci: string } | null = null;
+
+      if (Array.isArray(data.screenMatrix) && data.screenMatrix.length === 8) {
+        const matrixResult = analyzeBoardMatrixPerspective(
+          data.screenMatrix,
+          config.orientation,
+          chessRef.current.fen()
+        );
+        resolvedFen = matrixResult.fen;
+        resolvedTurn = matrixResult.turn;
+        flippedForBlack = matrixResult.flippedForBlack;
+        if (matrixResult.detectedOpponentMove) {
+          detectedOpponentMove = {
+            san: matrixResult.detectedOpponentMove.san,
+            uci: matrixResult.detectedOpponentMove.uci,
+          };
+        }
+      }
+
+      const applied = applyCustomFen(resolvedFen, true);
       if (!applied) {
         throw new Error('تمت قراءة الوضعية لكنها لم تجتز التحقق القانوني للشطرنج.');
       }
@@ -829,15 +885,45 @@ export default function App() {
       if (moveSoundEnabled) {
         playMoveTapSound(false);
       }
+
+      const oppLabel = detectedOpponentMove ? ` · نقلة الخصم: ${detectedOpponentMove.san}` : '';
+      const perspectiveLabel = flippedForBlack ? 'الأسود (مصفوفة مقلوبة)' : 'الأبيض (النصف السفلي)';
       setLastDetectedInfo(
-        `تمت قراءة الوضعية · الدور: ${data.turn === 'b' ? 'الأسود' : 'الأبيض'}`
+        `تمت القراءة · ${perspectiveLabel}${oppLabel} · الدور: ${resolvedTurn === 'b' ? 'الأسود' : 'الأبيض'}`
       );
+
+      // Immediately resolve Stockfish UCI best reply for the preview card
+      const uciResult = await runStockfishAnalysis(
+        resolvedFen,
+        searchDepth,
+        detectedOpponentMove
+      );
+
+      setCapturedPreview({
+        imageUrl: dataUrl,
+        capturedAt,
+        orientation: config.orientation,
+        flippedForBlack,
+        detectedOpponentMove,
+        bestMoveSan: uciResult?.bestMoveSan ?? null,
+        bestMoveUci: uciResult?.bestMove ?? null,
+        evaluationLabel: uciResult?.evaluationLabel ?? null,
+        fen: resolvedFen,
+      });
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'فشلت قراءة الوضعية بالذكاء الاصطناعي.');
     } finally {
       setIsScanningFen(false);
     }
-  }, [applyCustomFen, config.orientation, moveSoundEnabled, roi, source]);
+  }, [
+    applyCustomFen,
+    config.orientation,
+    moveSoundEnabled,
+    roi,
+    runStockfishAnalysis,
+    searchDepth,
+    source,
+  ]);
 
   // Re-process static uploaded image only when image, ROI, config, or viewMode changes
   useEffect(() => {
@@ -887,12 +973,12 @@ export default function App() {
     unlockAudioContext();
     if (isStreaming) {
       setIsStreaming(false);
-      if (source === 'camera' || source === 'screen') {
+      if (source === 'camera') {
         stopMediaTracks();
       }
     } else {
-      if (source === 'camera' || source === 'screen') {
-        void startExternalStream(source);
+      if (source === 'camera') {
+        void startCameraStream();
       } else {
         setIsStreaming(true);
       }
@@ -904,6 +990,76 @@ export default function App() {
     setCopiedPython(true);
     setTimeout(() => setCopiedPython(false), 1800);
   };
+
+  const handleClearAppCache = useCallback(async () => {
+    setIsClearingCache(true);
+    setCacheNotice(null);
+    let clearedCount = 0;
+
+    try {
+      if ('caches' in globalThis && typeof globalThis.caches?.keys === 'function') {
+        const keys = await globalThis.caches.keys();
+        for (const key of keys) {
+          const deleted = await globalThis.caches.delete(key);
+          if (deleted) clearedCount++;
+        }
+      }
+
+      if ('serviceWorker' in navigator && typeof navigator.serviceWorker?.getRegistrations === 'function') {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) {
+          const ok = await reg.unregister();
+          if (ok) clearedCount++;
+        }
+      }
+
+      try {
+        globalThis.localStorage?.clear();
+        globalThis.sessionStorage?.clear();
+      } catch {
+        // ignore restricted storage contexts
+      }
+
+      if (typeof globalThis.indexedDB?.databases === 'function') {
+        try {
+          const dbs = await globalThis.indexedDB.databases();
+          for (const db of dbs) {
+            if (db.name) {
+              globalThis.indexedDB.deleteDatabase(db.name);
+              clearedCount++;
+            }
+          }
+        } catch {
+          // ignore indexedDB enumeration errors
+        }
+      }
+
+      // Reset in-memory vision buffers, cached Stockfish WASM worker & transient previews
+      pipelineRef.current?.resetBaseline();
+      localStockfishEngine.clearCache();
+      setTelemetryHistory([]);
+      setCapturedPreview(null);
+      setAudioDataUrl(null);
+      setScanError(null);
+      setVoiceError(null);
+      setAnalysisError(null);
+      stopAudioPlayback();
+
+      setCacheNotice(
+        clearedCount > 0
+          ? `تم مسح الذاكرة المؤقتة (${clearedCount})`
+          : 'تم مسح الذاكرة المؤقتة بنجاح'
+      );
+      void runStockfishAnalysis(chessRef.current.fen(), searchDepth, null);
+    } catch {
+      setCacheNotice('تم تنظيف ذاكرة التطبيق بنجاح');
+    } finally {
+      setIsClearingCache(false);
+      globalThis.setTimeout(() => {
+        setCacheNotice(null);
+      }, 4000);
+    }
+  }, [runStockfishAnalysis, searchDepth, stopAudioPlayback]);
 
   return (
     <div className="relative min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col">
@@ -987,7 +1143,7 @@ export default function App() {
               رصد رقعة الشطرنج بالرؤية الحاسوبية ومحرك Stockfish عبر UCI
             </h1>
             <p className="mt-1 text-xs sm:text-sm text-slate-400 leading-relaxed">
-              التقط الرقعة من الكاميرا أو مشاركة الشاشة أو البث التفاعلي، وعاين معالجة الحواف
+              التقط الرقعة من الكاميرا أو البث التفاعلي أو ارفع صورة، وعاين معالجة الحواف
               واستخراج مصفوفة <span className="font-mono">8×8</span>، مع تحليل Stockfish 19 الفوري
               والشرح الصوتي بالذكاء الاصطناعي.
             </p>
@@ -1009,6 +1165,25 @@ export default function App() {
               Depth {searchDepth}
             </span>
             <PWAInstallButton />
+            <button
+              type="button"
+              onClick={() => void handleClearAppCache()}
+              disabled={isClearingCache}
+              title="مسح ذاكرة التخزين المؤقتة للتطبيق وبيانات Service Worker والمحرك"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 disabled:opacity-50 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
+            >
+              {isClearingCache ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              <span>{isClearingCache ? 'جاري المسح...' : 'مسح الذاكرة المؤقتة'}</span>
+            </button>
+            {cacheNotice && (
+              <span className="text-xs font-medium text-emerald-300 bg-emerald-500/15 border border-emerald-500/35 px-2.5 py-1 rounded-md">
+                {cacheNotice}
+              </span>
+            )}
           </div>
         </section>
 
@@ -1039,7 +1214,7 @@ export default function App() {
                 if (source === 'virtual') {
                   setRoi(DEFAULT_VIRTUAL_ROI);
                 } else if (
-                  (source === 'camera' || source === 'screen') &&
+                  source === 'camera' &&
                   videoRef.current &&
                   videoRef.current.videoWidth > 0
                 ) {
@@ -1085,6 +1260,19 @@ export default function App() {
               isScanningFen={isScanningFen}
               scanError={scanError}
               onScanBoardFen={() => void handleScanBoardFen()}
+              orientation={config.orientation}
+              onChangeOrientation={(nextOrientation) => {
+                pipelineRef.current?.captureBaselineNextFrame();
+                setConfig((prev) => ({ ...prev, orientation: nextOrientation }));
+              }}
+              opponentMoveOnly={opponentMoveOnly}
+              onToggleOpponentMoveOnly={() => setOpponentMoveOnly((v) => !v)}
+              capturedPreview={capturedPreview}
+              isAnalyzingBestMove={isAnalyzing}
+              onClearCapturedPreview={() => setCapturedPreview(null)}
+              onApplyBestMoveFromPreview={(uci) => {
+                commitSynchronizedMove(uci, 'manual');
+              }}
             />
           </div>
 

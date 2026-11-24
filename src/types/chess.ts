@@ -1,4 +1,4 @@
-export type CaptureSource = 'virtual' | 'camera' | 'screen' | 'image';
+export type CaptureSource = 'virtual' | 'camera' | 'image';
 
 export type VisionViewMode = 'original' | 'grayscale' | 'canny' | 'heatmap';
 
@@ -102,3 +102,19 @@ export interface MoveRecord {
 }
 
 export type TtsVoiceName = 'Kore' | 'Charon' | 'Fenrir' | 'Zephyr' | 'Puck';
+
+export interface CapturedBoardPreview {
+  imageUrl: string;
+  capturedAt: string;
+  orientation: BoardOrientation;
+  flippedForBlack: boolean;
+  detectedOpponentMove: {
+    san: string;
+    uci: string;
+  } | null;
+  bestMoveSan: string | null;
+  bestMoveUci: string | null;
+  evaluationLabel: string | null;
+  fen: string;
+}
+

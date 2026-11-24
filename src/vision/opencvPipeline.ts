@@ -223,8 +223,9 @@ export class OpenCvChessPipeline {
   }
 
   /**
-   * Captures a high-resolution, perspective-corrected JPEG of the ROI box
-   * oriented so Rank 8 is always at top and Rank 1 at bottom for Gemini Vision FEN parsing.
+   * Captures a high-resolution, perspective-corrected JPEG of the ROI box.
+   * When rawScreenSpace is true (default), keeps exact camera screen coordinates
+   * so the bottom half always represents the player's side and Black flip happens programmatically on the 8x8 matrix.
    */
   public captureRoiDataUrl(
     source: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
@@ -232,7 +233,8 @@ export class OpenCvChessPipeline {
     sourceHeight: number,
     roi: RoiQuad,
     orientation: BoardOrientation,
-    outSize = 640
+    outSize = 640,
+    rawScreenSpace = true
   ): string | null {
     if (sourceWidth <= 0 || sourceHeight <= 0) return null;
     const snapCanvas = document.createElement('canvas');
@@ -243,7 +245,7 @@ export class OpenCvChessPipeline {
 
     this.drawRoiToCanvas(snapCtx, outSize, source, sourceWidth, sourceHeight, roi);
 
-    if (orientation === 'black') {
+    if (!rawScreenSpace && orientation === 'black') {
       const rotCanvas = document.createElement('canvas');
       rotCanvas.width = outSize;
       rotCanvas.height = outSize;
@@ -271,7 +273,8 @@ export class OpenCvChessPipeline {
     config: VisionConfig,
     viewMode: VisionViewMode,
     outputCanvas: HTMLCanvasElement | null,
-    currentFen: string
+    currentFen: string,
+    opponentMoveOnly = false
   ): VisionProcessResult {
     const t0 = performance.now();
     const res = config.resolution;
@@ -430,7 +433,9 @@ export class OpenCvChessPipeline {
       }
     }
 
-    if (changedCount > 14 && this.prevBlurred && this.prevBlurred.length === pixelCount) {
+    // Measure inter-frame stability so passing hands / random motion do not trigger false moves
+    let avgInterFrameDiff = 0;
+    if (this.prevBlurred && this.prevBlurred.length === pixelCount) {
       let frameDiffSum = 0;
       const step = 16;
       let sampled = 0;
@@ -438,8 +443,11 @@ export class OpenCvChessPipeline {
         frameDiffSum += Math.abs(blurred[i] - this.prevBlurred[i]);
         sampled++;
       }
-      const avgFrameDiff = frameDiffSum / Math.max(1, sampled);
-      if (avgFrameDiff < 4.5) {
+      avgInterFrameDiff = frameDiffSum / Math.max(1, sampled);
+    }
+
+    if (changedCount > 14 && this.prevBlurred && this.prevBlurred.length === pixelCount) {
+      if (avgInterFrameDiff < 4.5) {
         this.settledDriftFrames++;
         if (this.settledDriftFrames >= 14) {
           this.baselineGray = new Uint8Array(blurred);
@@ -458,13 +466,17 @@ export class OpenCvChessPipeline {
       this.prevBlurred.set(blurred);
     }
 
-    // 6. Detect Legal Chess Move from 8x8 Frame Deltas
-    const candidateMove = this.matchLegalMoveFromDeltas(
-      squareMetrics,
-      config.motionThreshold,
-      config.orientation,
-      currentFen
-    );
+    // 6. Detect Legal Chess Move from 8x8 Frame Deltas (ignoring random hand/camera motion)
+    const isMotionSettled = avgInterFrameDiff < 3.4;
+    const candidateMove = isMotionSettled
+      ? this.matchLegalMoveFromDeltas(
+          squareMetrics,
+          config.motionThreshold,
+          config.orientation,
+          currentFen,
+          opponentMoveOnly
+        )
+      : null;
 
     if (candidateMove) {
       if (this.pendingMoveUci === candidateMove.uci) {
@@ -478,8 +490,8 @@ export class OpenCvChessPipeline {
       this.pendingMoveStreak = 0;
     }
 
-    // Require 3 frames at high FPS (45-60 FPS) or 2 frames at standard FPS before confirming
-    const requiredStreak = config.targetFps >= 45 ? 3 : config.targetFps <= 4 ? 1 : 2;
+    // Require consecutive settled frames before confirming to ignore random transient movements
+    const requiredStreak = config.targetFps >= 45 ? 4 : config.targetFps <= 4 ? 1 : 2;
     const confirmedMove =
       candidateMove && this.pendingMoveStreak >= requiredStreak ? candidateMove : null;
 
@@ -609,7 +621,8 @@ export class OpenCvChessPipeline {
     squareMetrics: SquareMetric[][],
     threshold: number,
     orientation: BoardOrientation,
-    currentFen: string
+    currentFen: string,
+    opponentMoveOnly = false
   ): VisionProcessResult['candidateMove'] {
     const deltaMap = new Map<string, number>();
     let changedCount = 0;
@@ -624,8 +637,8 @@ export class OpenCvChessPipeline {
       }
     }
 
-    // Must have at least 2 squares above threshold, and not global lighting flicker (>14 squares changed)
-    if (changedCount < 2 || changedCount > 14) {
+    // A legal chess move changes 2..4 squares; >6 changed squares indicates random/hand/camera noise
+    if (changedCount < 2 || changedCount > 6) {
       return null;
     }
 
@@ -634,6 +647,13 @@ export class OpenCvChessPipeline {
       chess = new Chess(currentFen);
     } catch {
       return null;
+    }
+
+    if (opponentMoveOnly) {
+      const opponentColor = orientation === 'white' ? 'b' : 'w';
+      if (chess.turn() !== opponentColor) {
+        return null;
+      }
     }
 
     const legalMoves = chess.moves({ verbose: true });
