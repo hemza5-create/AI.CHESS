@@ -25,14 +25,14 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies without lockfile
+        run: npm install --package-lock=false
 
       - name: Build web project
         run: npm run build
 
       - name: Install Capacitor CLI and Core
-        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+        run: npm install --package-lock=false @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Initialize Capacitor and add Android platform
         run: |
