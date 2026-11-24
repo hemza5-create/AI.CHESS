@@ -1,16 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
-import { Copy, Check, Download, Trash2, Loader2 } from 'lucide-react';
+import { Copy, Check, Download, Trash2, Loader2, WifiOff } from 'lucide-react';
 import { LiveVisionStage } from './components/LiveVisionStage.tsx';
 import { DigitalBoard } from './components/DigitalBoard.tsx';
 import { AnalysisAndVoicePanel } from './components/AnalysisAndVoicePanel.tsx';
 import { ResourceTradeoffConsole } from './components/ResourceTradeoffConsole.tsx';
 import { PWAInstallButton } from './components/PWAInstallButton.tsx';
+import { LanguageSwitcher } from './components/LanguageSwitcher.tsx';
+import { saveStoredLanguage, useLanguage } from './i18n/LanguageContext.tsx';
+import type { TranslationDictionary } from './i18n/translations.ts';
 import { OpenCvChessPipeline, computeFitRoi } from './vision/opencvPipeline.ts';
 import { analyzeBoardMatrixPerspective, type BoardMatrix8x8 } from './vision/boardMatrix.ts';
 import { renderVirtualBoardToCanvas, SAMPLE_GAMES } from './vision/virtualBoardRenderer.ts';
 import { playMoveTapSound, unlockAudioContext } from './utils/soundEffects.ts';
 import { localStockfishEngine } from './engine/localStockfishEngine.ts';
+import {
+  buildApiUrl,
+  checkRemoteServerHealth,
+  getStoredExternalServerUrl,
+  isCapacitorNativeRuntime,
+  saveExternalServerUrl,
+  useOnlineStatus,
+  type ActiveEngineSource,
+  type RemoteServerStatus,
+} from './utils/networkAndServer.ts';
 import type {
   CapturedBoardPreview,
   CaptureSource,
@@ -31,51 +44,23 @@ const DEFAULT_VIRTUAL_ROI: RoiQuad = [
   { x: 0.08, y: 0.92 },
 ];
 
-const PYTHON_REFERENCE_SNIPPET = `import cv2
-import numpy as np
-import mss
-import chess
-import chess.engine
-
-engine = chess.engine.SimpleEngine.from_uci("stockfish_path")
-board = chess.Board()
-
-def detect_move_from_frame(frame):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 50, 150)
-    # استخراج مصفوفة 8x8 ومقارنة الإطار السابق بالحالي لتحديد النقلة
-    return "e2e4"
-
-def analyze_and_explain(uci_move):
-    move = chess.Move.from_uci(uci_move)
-    if move in board.legal_moves:
-        board.push(move)
-        info = engine.analyse(board, chess.engine.Limit(depth=15))
-        print(f"النقلة: {uci_move} | أفضل رد: {info['pv'][0]} | التقييم: {info['score'].white()}")`;
-
-function isCapacitorNativeRuntime(): boolean {
-  const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
-  return Boolean(cap?.isNativePlatform?.());
-}
-
-async function parseJsonResponse<T>(res: Response, fallbackError: string): Promise<T> {
+async function parseJsonResponse<T>(
+  res: Response,
+  fallbackError: string,
+  t: TranslationDictionary
+): Promise<T> {
   const rawText = await res.text();
   if (!rawText.trim()) {
-    throw new Error(`${fallbackError} (استجابة فارغة من الخادم: ${res.status})`);
+    throw new Error(t.emptyServerResponse(fallbackError, res.status));
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawText);
   } catch {
     if (isCapacitorNativeRuntime() || rawText.trimStart().startsWith('<')) {
-      throw new Error(
-        'هذه الميزة السحابية تتطلب اتصالاً بخادم التطبيق، بينما يعمل محرك Stockfish والرؤية الحاسوبية محلياً دون خادم.'
-      );
+      throw new Error(t.cloudFeatureRequiresServer);
     }
-    throw new Error(
-      `استجاب الخادم بصيغة غير صالحة (ليست JSON). تأكد من تشغيل خادم التطبيق (${res.status}).`
-    );
+    throw new Error(t.invalidServerJson(res.status));
   }
   if (!res.ok) {
     const errMsg =
@@ -88,6 +73,7 @@ async function parseJsonResponse<T>(res: Response, fallbackError: string): Promi
 }
 
 export default function App() {
+  const { language, meta, t } = useLanguage();
   const [source, setSource] = useState<CaptureSource>('virtual');
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<VisionViewMode>('original');
@@ -159,7 +145,19 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const analyzeAbortRef = useRef<AbortController | null>(null);
-  const useLocalStockfishRef = useRef<boolean>(isCapacitorNativeRuntime());
+
+  const isOnline = useOnlineStatus();
+  const [externalServerUrl, setExternalServerUrl] = useState<string>(() =>
+    getStoredExternalServerUrl()
+  );
+  const [remoteServerStatus, setRemoteServerStatus] = useState<RemoteServerStatus>(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
+    return buildApiUrl('/api/stockfish/health') ? 'checking' : 'unconfigured';
+  });
+  const [activeEngineSource, setActiveEngineSource] = useState<ActiveEngineSource>('local-wasm');
+  const activeEngineSourceRef = useRef<ActiveEngineSource>('local-wasm');
+  const fenRef = useRef<string>(chessRef.current.fen());
+  fenRef.current = fen;
 
   // Gemini Explanation & TTS State (on-demand toggle)
   const [voiceCoachEnabled, setVoiceCoachEnabled] = useState<boolean>(false);
@@ -205,14 +203,14 @@ export default function App() {
       audio.onended = () => setIsPlayingAudio(false);
       audio.onerror = () => {
         setIsPlayingAudio(false);
-        setVoiceError('تعذر تشغيل ملف الصوت في المتصفح.');
+        setVoiceError(t.audioPlayError);
       };
       setIsPlayingAudio(true);
       audio.play().catch(() => {
         setIsPlayingAudio(false);
       });
     },
-    [stopAudioPlayback]
+    [stopAudioPlayback, t.audioPlayError]
   );
 
   // Run Gemini Text Explanation + TTS Synthesis
@@ -222,9 +220,16 @@ export default function App() {
       moveCtx: { san: string; uci: string } | null
     ) => {
       setVoiceError(null);
+      const explainUrl = buildApiUrl('/api/gemini/explain', externalServerUrl);
+      const ttsUrl = buildApiUrl('/api/gemini/tts', externalServerUrl);
+      if (!isOnline || !explainUrl || !ttsUrl) {
+        setVoiceError(t.voiceCloudRequired);
+        return;
+      }
+
       setIsGeneratingExplanation(true);
       try {
-        const expRes = await fetch('/api/gemini/explain', {
+        const expRes = await fetch(explainUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -237,44 +242,47 @@ export default function App() {
             turn: targetAnalysis.turn,
             topLineSan: targetAnalysis.lines[0]?.pvSan ?? [],
             playerElo,
+            language,
           }),
         });
         const expData = await parseJsonResponse<{ explanation: string }>(
           expRes,
-          'فشل توليد الشرح التحليلي.'
+          t.voiceExplainFailed,
+          t
         );
 
         const text = expData.explanation;
         setExplanationText(text);
         setIsGeneratingExplanation(false);
 
-        // Synthesize Arabic audio with Gemini TTS
+        // Synthesize multilingual audio with Gemini TTS
         setIsSynthesizingAudio(true);
-        const ttsRes = await fetch('/api/gemini/tts', {
+        const ttsRes = await fetch(ttsUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, voiceName: selectedVoice }),
+          body: JSON.stringify({ text, voiceName: selectedVoice, language }),
         });
         const ttsData = await parseJsonResponse<{ audioBase64: string; mimeType?: string }>(
           ttsRes,
-          'فشل تحويل الشرح إلى صوت.'
+          t.voiceTtsFailed,
+          t
         );
 
         const url = `data:${ttsData.mimeType || 'audio/wav'};base64,${ttsData.audioBase64}`;
         setAudioDataUrl(url);
         playAudioUrl(url);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'حدث خطأ أثناء الشرح الصوتي.';
+        const msg = err instanceof Error ? err.message : t.voiceGenericError;
         setVoiceError(msg);
       } finally {
         setIsGeneratingExplanation(false);
         setIsSynthesizingAudio(false);
       }
     },
-    [selectedVoice, playAudioUrl, playerElo]
+    [externalServerUrl, isOnline, language, selectedVoice, playAudioUrl, playerElo, t]
   );
 
-  // Run Stockfish 19 UCI analysis whenever FEN, searchDepth, playerElo, or autoDepthByElo changes
+  // Run Stockfish 19 UCI analysis (automatic external server when online & reachable, seamless local WebAssembly offline fallback)
   const runStockfishAnalysis = useCallback(
     async (
       targetFen: string,
@@ -290,20 +298,37 @@ export default function App() {
       setIsAnalyzing(true);
       setAnalysisError(null);
 
+      const runLocalWasm = async (): Promise<StockfishAnalysisResult> => {
+        const res = await localStockfishEngine.analyze(
+          targetFen,
+          depth,
+          3,
+          playerElo,
+          autoDepthByElo
+        );
+        const backend: ActiveEngineSource =
+          localStockfishEngine.getActiveBackend() === 'asm' ? 'local-asm' : 'local-wasm';
+        activeEngineSourceRef.current = backend;
+        setActiveEngineSource(backend);
+        return res;
+      };
+
       try {
         let typed: StockfishAnalysisResult;
+        const analyzeUrl = buildApiUrl('/api/stockfish/analyze', externalServerUrl);
 
-        if (useLocalStockfishRef.current) {
-          typed = await localStockfishEngine.analyze(
-            targetFen,
-            depth,
-            3,
-            playerElo,
-            autoDepthByElo
-          );
+        const shouldTryRemote =
+          isOnline &&
+          Boolean(analyzeUrl) &&
+          remoteServerStatus !== 'offline' &&
+          remoteServerStatus !== 'unconfigured';
+
+        if (!shouldTryRemote || !analyzeUrl) {
+          typed = await runLocalWasm();
         } else {
+          const timeoutId = globalThis.setTimeout(() => controller.abort(), 6000);
           try {
-            const res = await fetch('/api/stockfish/analyze', {
+            const res = await fetch(analyzeUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -315,29 +340,34 @@ export default function App() {
               }),
               signal: controller.signal,
             });
+            globalThis.clearTimeout(timeoutId);
             const contentType = res.headers.get('content-type') ?? '';
             if (!res.ok || !contentType.includes('application/json')) {
               throw new Error('BACKEND_UNAVAILABLE');
             }
             typed = await parseJsonResponse<StockfishAnalysisResult>(
               res,
-              'فشل تحليل Stockfish.'
+              t.stockfishAnalyzeFailed,
+              t
             );
+            activeEngineSourceRef.current = 'remote';
+            setActiveEngineSource('remote');
+            setRemoteServerStatus('connected');
           } catch (backendErr) {
-            if ((backendErr as Error).name === 'AbortError') throw backendErr;
-            // Fallback transparently to local WebView/WASM Stockfish worker
-            useLocalStockfishRef.current = true;
-            typed = await localStockfishEngine.analyze(
-              targetFen,
-              depth,
-              3,
-              playerElo,
-              autoDepthByElo
+            globalThis.clearTimeout(timeoutId);
+            // If aborted by a newer analysis call (not our timeout), rethrow
+            if (analyzeAbortRef.current !== controller) {
+              throw backendErr;
+            }
+            // Fallback immediately to local WebAssembly Stockfish without permanently disabling future server reconnects
+            setRemoteServerStatus(
+              typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'unreachable'
             );
+            typed = await runLocalWasm();
           }
         }
 
-        if (controller.signal.aborted) return null;
+        if (analyzeAbortRef.current !== controller) return null;
         setAnalysis(typed);
 
         // Update latest move evaluation label in history
@@ -356,8 +386,10 @@ export default function App() {
         }
         return typed;
       } catch (err) {
-        if ((err as Error).name === 'AbortError') return null;
-        setAnalysisError(err instanceof Error ? err.message : 'تعذر الاتصال بمحرك Stockfish.');
+        if ((err as Error).name === 'AbortError' && analyzeAbortRef.current !== controller) {
+          return null;
+        }
+        setAnalysisError(err instanceof Error ? err.message : t.stockfishStartFailed);
         autoSpeakPendingRef.current = false;
         return null;
       } finally {
@@ -366,7 +398,72 @@ export default function App() {
         }
       }
     },
-    [autoDepthByElo, playerElo, triggerExplainAndSpeak]
+    [autoDepthByElo, externalServerUrl, isOnline, playerElo, remoteServerStatus, t, triggerExplainAndSpeak]
+  );
+
+  // Preload local WebAssembly Stockfish on mount so offline mode works instantaneously
+  useEffect(() => {
+    void localStockfishEngine.warmup().then((backend) => {
+      if (backend && activeEngineSourceRef.current !== 'remote') {
+        const src: ActiveEngineSource = backend === 'asm' ? 'local-asm' : 'local-wasm';
+        activeEngineSourceRef.current = src;
+        setActiveEngineSource(src);
+      }
+    });
+  }, []);
+
+  // Automatically probe external/remote Stockfish server whenever network returns or URL changes
+  const probeAndAutoConnectServer = useCallback(
+    async (urlOverride?: string) => {
+      const targetUrl = urlOverride ?? externalServerUrl;
+      if (!isOnline) {
+        setRemoteServerStatus('offline');
+        if (activeEngineSourceRef.current === 'remote') {
+          const localSrc: ActiveEngineSource =
+            localStockfishEngine.getActiveBackend() === 'asm' ? 'local-asm' : 'local-wasm';
+          activeEngineSourceRef.current = localSrc;
+          setActiveEngineSource(localSrc);
+        }
+        return;
+      }
+
+      if (!buildApiUrl('/api/stockfish/health', targetUrl)) {
+        setRemoteServerStatus('unconfigured');
+        return;
+      }
+
+      setRemoteServerStatus('checking');
+      const health = await checkRemoteServerHealth(targetUrl);
+      setRemoteServerStatus(health.status);
+      if (health.reachable && activeEngineSourceRef.current !== 'remote') {
+        activeEngineSourceRef.current = 'remote';
+        setActiveEngineSource('remote');
+        void runStockfishAnalysis(fenRef.current, searchDepth, null);
+      }
+    },
+    [externalServerUrl, isOnline, runStockfishAnalysis, searchDepth]
+  );
+
+  useEffect(() => {
+    void probeAndAutoConnectServer();
+  }, [isOnline, externalServerUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Periodic background check when online but currently using local WASM fallback so external server reconnects automatically
+  useEffect(() => {
+    if (!isOnline || remoteServerStatus !== 'unreachable') return;
+    const intervalId = globalThis.setInterval(() => {
+      void probeAndAutoConnectServer();
+    }, 25000);
+    return () => globalThis.clearInterval(intervalId);
+  }, [isOnline, remoteServerStatus, probeAndAutoConnectServer]);
+
+  const handleSaveExternalServerUrl = useCallback(
+    (nextRawUrl: string) => {
+      const saved = saveExternalServerUrl(nextRawUrl);
+      setExternalServerUrl(saved);
+      void probeAndAutoConnectServer(saved);
+    },
+    [probeAndAutoConnectServer]
   );
 
   // Initial Stockfish analysis & re-run on depth / Elo change (debounced slightly for smooth slider dragging)
@@ -419,7 +516,7 @@ export default function App() {
             uci,
             fen: nextFen,
             source: moveSource,
-            timestamp: new Date().toLocaleTimeString('ar-EG', {
+            timestamp: new Date().toLocaleTimeString(meta.locale, {
               hour12: false,
               hour: '2-digit',
               minute: '2-digit',
@@ -438,7 +535,7 @@ export default function App() {
         return false;
       }
     },
-    [autoSpeak, moveSoundEnabled, runStockfishAnalysis, searchDepth, voiceCoachEnabled]
+    [autoSpeak, meta.locale, moveSoundEnabled, runStockfishAnalysis, searchDepth, voiceCoachEnabled]
   );
 
   // Start Camera stream
@@ -448,7 +545,7 @@ export default function App() {
 
     try {
       if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-        throw new Error('المتصفح أو التطبيق لا يدعم واجهات التقاط الوسائط في هذا السياق.');
+        throw new Error(t.cameraUnsupported);
       }
 
       const acquireCameraStream = async (): Promise<MediaStream> => {
@@ -499,7 +596,7 @@ export default function App() {
             pipelineRef.current?.resetBaseline();
           }
         };
-        await vid.play();
+        await vid.play().catch(() => undefined);
         if (vid.videoWidth > 0 && vid.videoHeight > 0) {
           setRoi(computeFitRoi(vid.videoWidth, vid.videoHeight, 1));
         }
@@ -523,16 +620,16 @@ export default function App() {
         errName === 'PermissionDeniedError' ||
         /permission|denied/i.test(rawMsg);
       const friendlyMsg = isDenied
-        ? 'تم رفض إذن الكاميرا. اسمح للتطبيق بالوصول إلى الكاميرا من إعدادات الهاتف ثم اضغط «إعادة المحاولة».'
+        ? t.cameraDenied
         : errName === 'NotFoundError' || errName === 'DevicesNotFoundError'
-        ? 'لم يتم العثور على كاميرا متصلة على هذا الجهاز.'
+        ? t.cameraNotFound
         : errName === 'NotReadableError'
-        ? 'الكاميرا قيد الاستخدام حالياً بواسطة تطبيق آخر.'
-        : rawMsg || 'تعذر الوصول إلى الكاميرا.';
+        ? t.cameraInUse
+        : rawMsg || t.cameraAccessFailed;
       setStreamError(friendlyMsg);
       setIsStreaming(false);
     }
-  }, [config.targetFps, stopMediaTracks]);
+  }, [config.targetFps, stopMediaTracks, t]);
 
   // Switch capture source
   const handleSelectSource = useCallback(
@@ -648,7 +745,7 @@ export default function App() {
 
       if (result.candidateMove) {
         const { uci, san, confidence } = result.candidateMove;
-        setLastDetectedInfo(`تم رصد: ${san} (${uci}) · ثقة ${confidence}%`);
+        setLastDetectedInfo(t.detectedMoveStatus(san, uci, confidence));
         commitSynchronizedMove(uci, 'vision');
       }
     };
@@ -665,6 +762,7 @@ export default function App() {
     simulateLightingNoise,
     opponentMoveOnly,
     commitSynchronizedMove,
+    t,
   ]);
 
   // Step through preset game inside the Virtual Stream (pixels change -> OpenCV detects the move!)
@@ -807,18 +905,18 @@ export default function App() {
     }
 
     if (!srcElem || srcW === 0 || srcH === 0) {
-      setScanError('لا يوجد إطار نشط حالياً. شغّل الكاميرا أو ارفع صورة أولاً.');
+      setScanError(t.noActiveFrameError);
       return;
     }
 
     // Capture raw screen-space ROI (bottom half = player area; Black flip happens programmatically on the 8x8 matrix)
     const dataUrl = pipeline.captureRoiDataUrl(srcElem, srcW, srcH, roi, config.orientation, 640, true);
     if (!dataUrl) {
-      setScanError('تعذر التقاط منطقة الرقعة (ROI).');
+      setScanError(t.roiCaptureError);
       return;
     }
 
-    const capturedAt = new Date().toLocaleTimeString('ar-EG', {
+    const capturedAt = new Date().toLocaleTimeString(meta.locale, {
       hour12: false,
       hour: '2-digit',
       minute: '2-digit',
@@ -837,9 +935,15 @@ export default function App() {
       fen: chessRef.current.fen(),
     });
 
+    const boardFenUrl = buildApiUrl('/api/gemini/board-fen', externalServerUrl);
+    if (!isOnline || !boardFenUrl) {
+      setScanError(t.aiScanCloudRequired);
+      return;
+    }
+
     setIsScanningFen(true);
     try {
-      const res = await fetch('/api/gemini/board-fen', {
+      const res = await fetch(boardFenUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -853,7 +957,7 @@ export default function App() {
         turn?: 'w' | 'b';
         screenMatrix?: BoardMatrix8x8;
         flippedForBlack?: boolean;
-      }>(res, 'تعذر قراءة وضعية الرقعة.');
+      }>(res, t.aiScanReadFailed, t);
 
       let resolvedFen = data.fen;
       let resolvedTurn: 'w' | 'b' = data.turn === 'b' ? 'b' : 'w';
@@ -879,17 +983,20 @@ export default function App() {
 
       const applied = applyCustomFen(resolvedFen, true);
       if (!applied) {
-        throw new Error('تمت قراءة الوضعية لكنها لم تجتز التحقق القانوني للشطرنج.');
+        throw new Error(t.illegalBoardPosition);
       }
 
       if (moveSoundEnabled) {
         playMoveTapSound(false);
       }
 
-      const oppLabel = detectedOpponentMove ? ` · نقلة الخصم: ${detectedOpponentMove.san}` : '';
-      const perspectiveLabel = flippedForBlack ? 'الأسود (مصفوفة مقلوبة)' : 'الأبيض (النصف السفلي)';
+      const perspectiveLabel = flippedForBlack ? t.perspectiveBlackFlipped : t.perspectiveWhiteBottom;
       setLastDetectedInfo(
-        `تمت القراءة · ${perspectiveLabel}${oppLabel} · الدور: ${resolvedTurn === 'b' ? 'الأسود' : 'الأبيض'}`
+        t.scanReadSummary(
+          perspectiveLabel,
+          detectedOpponentMove?.san ?? null,
+          resolvedTurn === 'b' ? t.blackName : t.whiteName
+        )
       );
 
       // Immediately resolve Stockfish UCI best reply for the preview card
@@ -911,18 +1018,22 @@ export default function App() {
         fen: resolvedFen,
       });
     } catch (err) {
-      setScanError(err instanceof Error ? err.message : 'فشلت قراءة الوضعية بالذكاء الاصطناعي.');
+      setScanError(err instanceof Error ? err.message : t.aiScanGenericFailed);
     } finally {
       setIsScanningFen(false);
     }
   }, [
     applyCustomFen,
     config.orientation,
+    externalServerUrl,
+    isOnline,
+    meta.locale,
     moveSoundEnabled,
     roi,
     runStockfishAnalysis,
     searchDepth,
     source,
+    t,
   ]);
 
   // Re-process static uploaded image only when image, ROI, config, or viewMode changes
@@ -986,7 +1097,7 @@ export default function App() {
   };
 
   const handleCopyPython = () => {
-    navigator.clipboard.writeText(PYTHON_REFERENCE_SNIPPET);
+    navigator.clipboard.writeText(t.pythonSnippet);
     setCopiedPython(true);
     setTimeout(() => setCopiedPython(false), 1800);
   };
@@ -1016,6 +1127,10 @@ export default function App() {
       try {
         globalThis.localStorage?.clear();
         globalThis.sessionStorage?.clear();
+        saveStoredLanguage(language);
+        if (externalServerUrl) {
+          saveExternalServerUrl(externalServerUrl);
+        }
       } catch {
         // ignore restricted storage contexts
       }
@@ -1046,20 +1161,18 @@ export default function App() {
       stopAudioPlayback();
 
       setCacheNotice(
-        clearedCount > 0
-          ? `تم مسح الذاكرة المؤقتة (${clearedCount})`
-          : 'تم مسح الذاكرة المؤقتة بنجاح'
+        clearedCount > 0 ? t.cacheClearedCount(clearedCount) : t.cacheClearedSuccess
       );
       void runStockfishAnalysis(chessRef.current.fen(), searchDepth, null);
     } catch {
-      setCacheNotice('تم تنظيف ذاكرة التطبيق بنجاح');
+      setCacheNotice(t.cacheClearedSuccess);
     } finally {
       setIsClearingCache(false);
       globalThis.setTimeout(() => {
         setCacheNotice(null);
       }, 4000);
     }
-  }, [runStockfishAnalysis, searchDepth, stopAudioPlayback]);
+  }, [externalServerUrl, language, runStockfishAnalysis, searchDepth, stopAudioPlayback, t]);
 
   return (
     <div className="relative min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col">
@@ -1068,52 +1181,52 @@ export default function App() {
         <img
           src="/assets/aistudio/FB_IMG_1795486450572_eb120a57.jpg"
           alt=""
-          className="w-full h-full object-cover object-center opacity-60"
+          className="w-full h-full object-cover object-center opacity-75"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0E14]/50 via-[#0B0E14]/25 to-[#0B0E14]/60" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0E14]/55 via-[#0B0E14]/35 to-[#0B0E14]/65" />
       </div>
 
       {/* Top Bar Contract: Single Row, 3 Zones */}
-      <header className="sticky top-0 z-30 bg-[#0B0E14]/60 backdrop-blur-md border-b border-slate-700/50">
-        <div className="max-w-[1440px] mx-auto px-6 h-14 flex items-center justify-between gap-8">
+      <header className="sticky top-0 z-30 bg-[#0B0E14]/70 backdrop-blur-md border-b border-slate-500/45">
+        <div className="max-w-[1440px] mx-auto px-6 h-16 flex items-center justify-between gap-8">
           {/* Zone 1: Single-line Brand Title */}
           <a
             href="#vision-stage"
-            className="flex items-center gap-2.5 text-base font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
+            className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0"
           >
             <img
               src="/assets/aistudio/apple-touch-icon_f4ce301f.png"
-              alt="شعار رَصْد الشطرنج"
-              className="w-8 h-8 rounded-lg object-cover ring-1 ring-amber-400/30 shrink-0"
+              alt={t.brandLogoAlt}
+              className="w-9 h-9 rounded-lg object-cover ring-1 ring-amber-400/45 shrink-0"
             />
-            <span>رَصْد الشطرنج</span>
+            <span>{t.brandName}</span>
           </a>
 
           {/* Zone 2: Concise Navigation Links */}
-          <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-400">
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-200">
             <a
               href="#vision-stage"
-              className="hover:text-slate-100 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-white transition-colors whitespace-nowrap shrink-0"
             >
-              البث والرصد البصري
+              {t.navVision}
             </a>
             <a
               href="#board-stage"
-              className="hover:text-slate-100 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-white transition-colors whitespace-nowrap shrink-0"
             >
-              الرقعة وتحليل UCI
+              {t.navBoard}
             </a>
             <a
               href="#profiler-stage"
-              className="hover:text-slate-100 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-white transition-colors whitespace-nowrap shrink-0"
             >
-              مقايضة الموارد
+              {t.navProfiler}
             </a>
             <a
               href="#architecture-reference"
-              className="hover:text-slate-100 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-white transition-colors whitespace-nowrap shrink-0"
             >
-              مرجع OpenCV و Python
+              {t.navReference}
             </a>
           </nav>
 
@@ -1122,13 +1235,13 @@ export default function App() {
             <button
               type="button"
               onClick={handleToggleStream}
-              className={`px-4 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-4 py-2 text-sm font-bold rounded-md transition-colors whitespace-nowrap shrink-0 shadow-sm ${
                 isStreaming
                   ? 'bg-rose-600 hover:bg-rose-500 text-white'
-                  : 'bg-cyan-600 hover:bg-cyan-500 text-slate-950'
+                  : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
               }`}
             >
-              {isStreaming ? 'إيقاف المراقبة الحية' : 'تشغيل المراقبة الحية'}
+              {isStreaming ? t.stopMonitoring : t.startMonitoring}
             </button>
           </div>
         </div>
@@ -1136,51 +1249,52 @@ export default function App() {
 
       {/* Main Workspace Container */}
       <main className="relative z-10 flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Intro Strip (Compact, direct functional overview) */}
-        <section className="flex flex-wrap items-end justify-between gap-4 pb-2 border-b border-slate-800/80">
+        {/* Intro Strip (Compact, direct functional overview + Workspace Controls) */}
+        <section className="flex flex-wrap items-end justify-between gap-4 p-4 sm:p-5 rounded-xl border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md shadow-lg">
           <div className="max-w-2xl">
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-100 leading-snug text-balance">
-              رصد رقعة الشطرنج بالرؤية الحاسوبية ومحرك Stockfish عبر UCI
+            <h1 className="text-2xl sm:text-3xl font-bold text-white leading-snug text-balance">
+              {t.heroTitle}
             </h1>
-            <p className="mt-1 text-xs sm:text-sm text-slate-400 leading-relaxed">
-              التقط الرقعة من الكاميرا أو البث التفاعلي أو ارفع صورة، وعاين معالجة الحواف
-              واستخراج مصفوفة <span className="font-mono">8×8</span>، مع تحليل Stockfish 19 الفوري
-              والشرح الصوتي بالذكاء الاصطناعي.
+            <p className="mt-1.5 text-sm sm:text-base text-slate-100 leading-relaxed">
+              {t.heroSubtitleBefore}
+              <span className="font-mono font-bold text-white">8×8</span>
+              {t.heroSubtitleAfter}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-slate-100">
             <span>
-              حالة البث:{' '}
-              <strong className={isStreaming ? 'text-emerald-400 font-medium' : 'text-slate-300 font-medium'}>
-                {isStreaming ? '● رصد نشط' : 'متوقف'}
+              {t.streamStatusLabel}{' '}
+              <strong className={isStreaming ? 'text-emerald-300 font-bold' : 'text-slate-100 font-semibold'}>
+                {isStreaming ? t.streamActive : t.streamPaused}
               </strong>
             </span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums" dir="ltr">
+            <span aria-hidden="true" className="text-slate-400">·</span>
+            <span className="font-mono font-semibold tabular-nums text-white" dir="ltr">
               {config.resolution}px @ {config.targetFps} FPS
             </span>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums" dir="ltr">
-              Depth {searchDepth}
+            <span aria-hidden="true" className="text-slate-400">·</span>
+            <span className="font-mono font-semibold tabular-nums text-white" dir="ltr">
+              {t.depthShort} {searchDepth}
             </span>
+            <LanguageSwitcher />
             <PWAInstallButton />
             <button
               type="button"
               onClick={() => void handleClearAppCache()}
               disabled={isClearingCache}
-              title="مسح ذاكرة التخزين المؤقتة للتطبيق وبيانات Service Worker والمحرك"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 disabled:opacity-50 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
+              title={t.clearCacheTooltip}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-amber-200 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/60 disabled:opacity-50 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
             >
               {isClearingCache ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-4 h-4" />
               )}
-              <span>{isClearingCache ? 'جاري المسح...' : 'مسح الذاكرة المؤقتة'}</span>
+              <span>{isClearingCache ? t.clearingCache : t.clearCache}</span>
             </button>
             {cacheNotice && (
-              <span className="text-xs font-medium text-emerald-300 bg-emerald-500/15 border border-emerald-500/35 px-2.5 py-1 rounded-md">
+              <span className="text-xs sm:text-sm font-semibold text-emerald-200 bg-emerald-500/25 border border-emerald-400/55 px-3 py-1.5 rounded-md">
                 {cacheNotice}
               </span>
             )}
@@ -1245,7 +1359,7 @@ export default function App() {
               }}
               onCalibrateBaseline={() => {
                 pipelineRef.current?.captureBaselineNextFrame();
-                setLastDetectedInfo('تمت معايرة الإطار المرجعي');
+                setLastDetectedInfo(t.baselineCalibratedStatus);
               }}
               onUploadImageFile={handleUploadImageFile}
               onSelectPreset={handleSelectPreset}
@@ -1308,6 +1422,12 @@ export default function App() {
               analysis={analysis}
               isAnalyzing={isAnalyzing}
               analysisError={analysisError}
+              isOnline={isOnline}
+              activeEngineSource={activeEngineSource}
+              remoteServerStatus={remoteServerStatus}
+              externalServerUrl={externalServerUrl}
+              onSaveExternalServerUrl={handleSaveExternalServerUrl}
+              onReconnectServer={() => void probeAndAutoConnectServer()}
               searchDepth={searchDepth}
               playerElo={playerElo}
               autoDepthByElo={autoDepthByElo}
@@ -1382,35 +1502,35 @@ export default function App() {
         {/* Architecture & Python Reference Implementation */}
         <section
           id="architecture-reference"
-          className="border border-slate-700/50 bg-[#121722]/45 backdrop-blur-md rounded-xl overflow-hidden"
+          className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-slate-700/50">
-            <h2 className="text-sm font-semibold text-slate-100">
-              هيكلة النظام والمرجع البرمجي (Python OpenCV + Stockfish UCI)
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+            <h2 className="text-base font-bold text-white">
+              {t.archTitle}
             </h2>
             <div className="flex items-center gap-2 shrink-0">
               <a
                 href="/api/download/app.zip"
                 download="chess-vision-uci-app.zip"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-500 hover:bg-cyan-400 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>تنزيل التطبيق (.zip)</span>
+                <Download className="w-4 h-4" />
+                <span>{t.downloadZipBtn}</span>
               </a>
               <button
                 type="button"
                 onClick={handleCopyPython}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-[#0B0E14]/55 border border-slate-700/70 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-slate-900/75 hover:bg-slate-800 border border-slate-500/70 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 {copiedPython ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>تم النسخ</span>
+                    <Check className="w-4 h-4 text-emerald-300" />
+                    <span>{t.copiedBtn}</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>نسخ كود Python</span>
+                    <Copy className="w-4 h-4" />
+                    <span>{t.copyPythonBtn}</span>
                   </>
                 )}
               </button>
@@ -1418,35 +1538,41 @@ export default function App() {
           </div>
 
           <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <div className="lg:col-span-5 space-y-3 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <div className="lg:col-span-5 space-y-4 text-sm sm:text-base text-slate-100 leading-relaxed">
               <div>
-                <h3 className="font-semibold text-slate-100 mb-1">
-                  01. التقاط الإطارات والمعالجة الأولية
+                <h3 className="font-bold text-white mb-1">
+                  {t.archStep1Title}
                 </h3>
-                <p className="text-slate-300">
-                  تُحوّل الإطارات الملتقطة إلى التدرج الرمادي ثم يُطبّق مرشح{' '}
-                  <span className="font-mono text-slate-100">GaussianBlur</span> لتقليل تشويش
-                  الحساس قبل استخراج الحواف عبر <span className="font-mono text-slate-100">Canny</span>.
+                <p className="text-slate-100">
+                  {t.archStep1DescBefore}
+                  <span className="font-mono font-semibold text-cyan-200">GaussianBlur</span>
+                  {t.archStep1DescMid}
+                  <span className="font-mono font-semibold text-cyan-200">Canny</span>
+                  {t.archStep1DescAfter}
                 </p>
               </div>
               <div>
-                <h3 className="font-semibold text-slate-100 mb-1">
-                  02. مطابقة المصفوفة 8×8 مع النقلات القانونية
+                <h3 className="font-bold text-white mb-1">
+                  {t.archStep2Title}
                 </h3>
-                <p className="text-slate-300">
-                  تُقسّم منطقة الاهتمام (ROI) إلى 64 مربعاً لقياس تغيّر السطوع بين الإطارين
-                  وربطه بمصفوفة <span className="font-mono text-slate-100">chess.Board</span>.
+                <p className="text-slate-100">
+                  {t.archStep2DescBefore}
+                  <span className="font-mono font-semibold text-cyan-200">chess.Board</span>
+                  {t.archStep2DescAfter}
                 </p>
               </div>
               <div>
-                <h3 className="font-semibold text-slate-100 mb-1">
-                  03. مقايضة استهلاك الموارد وزمن الاستجابة
+                <h3 className="font-bold text-white mb-1">
+                  {t.archStep3Title}
                 </h3>
-                <p className="text-slate-300">
-                  مضاعفة دقة المسح من <span className="font-mono text-slate-100">256px</span> إلى{' '}
-                  <span className="font-mono text-slate-100">800px</span> يزيد عدد البكسلات نحو 10
-                  أضعاف، ما يضغط على ميزانية الإطار عند الترددات العالية إذا تجاوز زمن المعالجة
-                  حد <span className="font-mono text-slate-100">1000 / FPS</span> ملي ثانية.
+                <p className="text-slate-100">
+                  {t.archStep3DescBefore}
+                  <span className="font-mono font-semibold text-cyan-200">256px</span>
+                  {t.archStep3DescMid1}
+                  <span className="font-mono font-semibold text-cyan-200">800px</span>
+                  {t.archStep3DescMid2}
+                  <span className="font-mono font-semibold text-cyan-200">1000 / FPS</span>
+                  {t.archStep3DescAfter}
                 </p>
               </div>
             </div>
@@ -1454,14 +1580,24 @@ export default function App() {
             <div className="lg:col-span-7">
               <pre
                 dir="ltr"
-                className="p-4 rounded-lg bg-[#070A10]/60 border border-slate-700/60 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed"
+                className="p-4 rounded-lg bg-[#060910]/85 border border-slate-500/55 text-xs sm:text-sm font-mono text-white overflow-x-auto leading-relaxed"
               >
-                <code>{PYTHON_REFERENCE_SNIPPET}</code>
+                <code>{t.pythonSnippet}</code>
               </pre>
             </div>
           </div>
         </section>
       </main>
+
+      {!isOnline && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-4 z-40 flex items-center gap-2 rounded-lg border border-amber-400/60 bg-[#0B0E14]/90 backdrop-blur-md px-3.5 py-2 text-xs sm:text-sm font-semibold text-amber-200 shadow-xl"
+        >
+          <WifiOff className="w-4 h-4 text-amber-300 shrink-0" />
+          <span>{t.offlineBanner}</span>
+        </div>
+      )}
     </div>
   );
 }

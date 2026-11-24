@@ -33,6 +33,14 @@ interface StockfishAnalysisResult {
   isGameOver: boolean;
   isCheck: boolean;
   gameOverReason: string | null;
+  gameOverKey?:
+    | 'checkmate_black'
+    | 'checkmate_white'
+    | 'stalemate'
+    | 'threefold'
+    | 'insufficient'
+    | 'draw'
+    | null;
   bestMove: string | null;
   ponder: string | null;
   bestMoveSan: string | null;
@@ -283,15 +291,28 @@ class StockfishUciEngine {
       const turn = chess.turn();
       const isGameOver = chess.isGameOver();
       let gameOverReason: string | null = null;
+      let gameOverKey:
+        | 'checkmate_black'
+        | 'checkmate_white'
+        | 'stalemate'
+        | 'threefold'
+        | 'insufficient'
+        | 'draw'
+        | null = null;
       if (chess.isCheckmate()) {
+        gameOverKey = turn === 'w' ? 'checkmate_black' : 'checkmate_white';
         gameOverReason = turn === 'w' ? 'كش مات لصالح الأسود' : 'كش مات لصالح الأبيض';
       } else if (chess.isStalemate()) {
+        gameOverKey = 'stalemate';
         gameOverReason = 'تعادل بالردب (Stalemate)';
       } else if (chess.isThreefoldRepetition()) {
+        gameOverKey = 'threefold';
         gameOverReason = 'تعادل بتكرار الوضعية ثلاث مرات';
       } else if (chess.isInsufficientMaterial()) {
+        gameOverKey = 'insufficient';
         gameOverReason = 'تعادل لعدم كفاية القطع';
       } else if (chess.isDraw()) {
+        gameOverKey = 'draw';
         gameOverReason = 'تعادل';
       }
 
@@ -304,6 +325,7 @@ class StockfishUciEngine {
           isGameOver: true,
           isCheck: chess.inCheck(),
           gameOverReason,
+          gameOverKey,
           bestMove: null,
           ponder: null,
           bestMoveSan: null,
@@ -520,6 +542,19 @@ function getGeminiClient(): GoogleGenAI {
 
 async function startServer() {
   const app = express();
+  app.use((req: Request, res: Response, next: express.NextFunction) => {
+    res.setHeader('Permissions-Policy', 'camera=*, microphone=*, display-capture=*');
+    if (req.path.startsWith('/api')) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      if (req.method === 'OPTIONS') {
+        res.status(204).end();
+        return;
+      }
+    }
+    next();
+  });
   app.use(express.json({ limit: '4mb' }));
 
   // Engine Health Check Endpoint
@@ -578,7 +613,7 @@ async function startServer() {
     }
   });
 
-  // Gemini Grandmaster Arabic Commentary Endpoint
+  // Gemini Grandmaster Multilingual Commentary Endpoint
   app.post('/api/gemini/explain', async (req: Request, res: Response) => {
     try {
       const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
@@ -591,6 +626,7 @@ async function startServer() {
         turn?: 'w' | 'b';
         topLineSan?: string[];
         playerElo?: number;
+        language?: string;
       };
       const {
         fen,
@@ -602,6 +638,7 @@ async function startServer() {
         turn,
         topLineSan,
         playerElo,
+        language = 'ar',
       } = body;
 
       if (!fen) {
@@ -610,26 +647,34 @@ async function startServer() {
       }
 
       const ai = getGeminiClient();
-      const turnArabic = turn === 'w' ? 'الأبيض' : 'الأسود';
+      const targetLangMap: Record<string, string> = {
+        ar: 'Arabic',
+        en: 'English',
+        ru: 'Russian',
+        zh: 'Simplified Chinese',
+        fr: 'French',
+      };
+      const targetLangName = targetLangMap[language] ?? 'Arabic';
+      const turnLabel = turn === 'w' ? 'White' : 'Black';
       const eloContext =
         typeof playerElo === 'number'
-          ? `مستوى اللاعب المستهدف: ${Math.round(playerElo)} Elo (كيّف عمق المصطلحات التكتيكية ليناسب هذا التقييم).`
+          ? `Target player rating: ${Math.round(playerElo)} Elo (adapt tactical depth accordingly).`
           : '';
       const prompt = [
-        `الوضعية الحالية (FEN): ${fen}`,
+        `Current FEN: ${fen}`,
         eloContext,
         lastMoveSan
-          ? `النقلة المرصودة للتو: ${lastMoveSan} (${lastMoveUci ?? ''})`
-          : 'الوضعية الابتدائية أو وضعية مخصصة.',
-        `الدور الآن على: ${turnArabic}`,
-        `تقييم محرك Stockfish (من منظور الأبيض): ${evaluationLabel ?? '0.00'}`,
+          ? `Last detected move: ${lastMoveSan} (${lastMoveUci ?? ''})`
+          : 'Starting or custom position.',
+        `Side to move: ${turnLabel}`,
+        `Stockfish evaluation (White perspective): ${evaluationLabel ?? '0.00'}`,
         bestMoveSan
-          ? `أفضل نقلة مقترحة من Stockfish: ${bestMoveSan} (${bestMoveUci ?? ''})`
-          : 'لا توجد نقلة متاحة (نهاية الدور).',
+          ? `Stockfish best move: ${bestMoveSan} (${bestMoveUci ?? ''})`
+          : 'No legal move available (game over).',
         topLineSan && topLineSan.length > 0
-          ? `التفريع الرئيسي المتوقع: ${topLineSan.join(' ')}`
+          ? `Principal variation: ${topLineSan.join(' ')}`
           : '',
-        'اشرح بإيجاز ووضوح باللغة العربية الفصحى في جملتين إلى ثلاث جمل: أثر النقلة المرصودة على التوازن التكتيكي أو السيطرة على الوسط، ولماذا تعد نقلة Stockfish المقترحة هي الرد الأمثل الآن. اكتب نصاً متصلاً قابلاً للقراءة الصوتية المباشرة بدون رموز أو قوائم أو إنجليزية زائدة.',
+        `Explain concisely and clearly in ${targetLangName} in 2 to 3 natural sentences: how the recent move affects tactical balance or central control, and why Stockfish's recommended move is optimal right now. Write clean, continuous prose suitable for direct text-to-speech without markdown symbols, bullet lists, or asterisks.`,
       ]
         .filter(Boolean)
         .join('\n');
@@ -639,8 +684,7 @@ async function startServer() {
         contents: prompt,
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          systemInstruction:
-            'أنت أستاذ كبير ومدرب شطرنج محترف تشرح تحليلات محرك Stockfish باللغة العربية الفصحى بأسلوب موجز وواضح ومناسب للإلقاء الصوتي المباشر دون علامات تنسيق أو نجوم.',
+          systemInstruction: `You are a chess Grandmaster and coach explaining Stockfish analysis concisely in ${targetLangName} for direct voice narration, without markdown formatting or bullet symbols.`,
         },
       });
 
@@ -658,12 +702,13 @@ async function startServer() {
     }
   });
 
-  // Gemini TTS Arabic Voice Synthesis Endpoint
+  // Gemini TTS Multilingual Voice Synthesis Endpoint
   app.post('/api/gemini/tts', async (req: Request, res: Response) => {
     try {
-      const { text, voiceName = 'Kore' } = req.body as {
+      const { text, voiceName = 'Kore', language = 'ar' } = req.body as {
         text?: string;
         voiceName?: string;
+        language?: string;
       };
 
       if (!text || typeof text !== 'string' || !text.trim()) {
@@ -673,6 +718,14 @@ async function startServer() {
 
       const allowedVoices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
       const safeVoice = allowedVoices.includes(voiceName) ? voiceName : 'Kore';
+      const ttsStyleMap: Record<string, string> = {
+        ar: 'معلق ومدرب شطرنج عربي رصين وواضح المخارج',
+        en: 'Clear, calm, and articulate English chess grandmaster commentator',
+        ru: 'Чёткий, спокойный и выразительный русскоязычный шахматный комментатор',
+        zh: '清晰、沉稳、专业的中文国际象棋特级大师解说员',
+        fr: 'Commentateur et entraîneur d’échecs francophone clair, calme et articulé',
+      };
+      const speechStyle = ttsStyleMap[language] ?? ttsStyleMap.ar;
 
       const ai = getGeminiClient();
       const response = await ai.models.generateContent({
@@ -684,7 +737,7 @@ async function startServer() {
               {
                 text: text.trim(),
                 speechMetadata: {
-                  style: 'معلق ومدرب شطرنج عربي رصين وواضح المخارج',
+                  style: speechStyle,
                 },
               },
             ],
@@ -961,6 +1014,9 @@ async function startServer() {
       const excludedNames = new Set([
         'node_modules',
         'dist',
+        'dev-dist',
+        'android',
+        'build',
         '.git',
         '.env',
         '.env.local',
@@ -1094,8 +1150,16 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (_req: Request, res: Response) => {
+    app.use(
+      express.static(distDir, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.wasm')) {
+            res.setHeader('Content-Type', 'application/wasm');
+          }
+        },
+      })
+    );
+    app.get('/{*splat}', (_req: Request, res: Response) => {
       const indexFile = path.join(distDir, 'index.html');
       if (fs.existsSync(indexFile)) {
         res.sendFile(indexFile);

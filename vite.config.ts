@@ -10,6 +10,55 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
+      {
+        name: 'stockfish-worker-assets',
+        configureServer(server) {
+          const sfBinDir = path.resolve(__dirname, 'node_modules/stockfish/bin');
+          const allowed = new Set([
+            'stockfish-19-lite-single.js',
+            'stockfish-19-lite-single.wasm',
+            'stockfish-19-asm.js',
+          ]);
+          server.middlewares.use('/stockfish', (req, res, next) => {
+            const cleanName = path.basename((req.url ?? '').split('?')[0]);
+            if (!allowed.has(cleanName)) {
+              next();
+              return;
+            }
+            const filePath = path.join(sfBinDir, cleanName);
+            if (!fs.existsSync(filePath)) {
+              next();
+              return;
+            }
+            res.setHeader(
+              'Content-Type',
+              cleanName.endsWith('.wasm')
+                ? 'application/wasm'
+                : 'application/javascript; charset=utf-8'
+            );
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            fs.createReadStream(filePath).pipe(res);
+          });
+        },
+        generateBundle() {
+          const sfBinDir = path.resolve(__dirname, 'node_modules/stockfish/bin');
+          const files = [
+            'stockfish-19-lite-single.js',
+            'stockfish-19-lite-single.wasm',
+            'stockfish-19-asm.js',
+          ];
+          for (const f of files) {
+            const src = path.join(sfBinDir, f);
+            if (fs.existsSync(src)) {
+              this.emitFile({
+                type: 'asset',
+                fileName: `stockfish/${f}`,
+                source: fs.readFileSync(src),
+              });
+            }
+          }
+        },
+      },
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['apple-touch-icon.png', 'favicon-32x32.png'],
@@ -50,13 +99,27 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,wasm}'],
-          globIgnores: ['**/stockfish/stockfish-19-asm.js'],
+          globIgnores: ['**/stockfish/stockfish-19-asm.js', '**/dev-dist/**'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
             {
               urlPattern: /^\/api\/.*/i,
               handler: 'NetworkOnly',
+            },
+            {
+              urlPattern: /\/stockfish\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'stockfish-wasm-cache',
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
             },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -93,72 +156,6 @@ export default defineConfig(() => {
           type: 'module',
         },
       }),
-      {
-        name: 'copy-unbundled-src-assets',
-        apply: 'build',
-        closeBundle(error?: Error): void {
-          if (error) {
-            return;
-          }
-          const distDir = path.resolve(__dirname, 'dist');
-          const srcAssets = path.resolve(__dirname, 'src/assets');
-          const distAssets = path.resolve(distDir, 'src/assets');
-          if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
-            fs.cpSync(srcAssets, distAssets, { recursive: true, force: true });
-          }
-        },
-      },
-      {
-        name: 'stockfish-worker-assets',
-        configureServer(server) {
-          const sfBinDir = path.resolve(__dirname, 'node_modules/stockfish/bin');
-          const allowed = new Set([
-            'stockfish-19-lite-single.js',
-            'stockfish-19-lite-single.wasm',
-            'stockfish-19-asm.js',
-          ]);
-          server.middlewares.use('/stockfish', (req, res, next) => {
-            const cleanName = path.basename((req.url ?? '').split('?')[0]);
-            if (!allowed.has(cleanName)) {
-              next();
-              return;
-            }
-            const filePath = path.join(sfBinDir, cleanName);
-            if (!fs.existsSync(filePath)) {
-              next();
-              return;
-            }
-            res.setHeader(
-              'Content-Type',
-              cleanName.endsWith('.wasm')
-                ? 'application/wasm'
-                : 'application/javascript; charset=utf-8'
-            );
-            fs.createReadStream(filePath).pipe(res);
-          });
-        },
-        closeBundle(error?: Error): void {
-          if (error) {
-            return;
-          }
-          const sfBinDir = path.resolve(__dirname, 'node_modules/stockfish/bin');
-          const distSfDir = path.resolve(__dirname, 'dist/stockfish');
-          const files = [
-            'stockfish-19-lite-single.js',
-            'stockfish-19-lite-single.wasm',
-            'stockfish-19-asm.js',
-          ];
-          if (fs.existsSync(sfBinDir)) {
-            fs.mkdirSync(distSfDir, { recursive: true });
-            for (const f of files) {
-              const src = path.join(sfBinDir, f);
-              if (fs.existsSync(src)) {
-                fs.copyFileSync(src, path.join(distSfDir, f));
-              }
-            }
-          }
-        },
-      },
     ],
     resolve: {
       alias: {

@@ -45,19 +45,28 @@ function formatEvaluationLabel(scoreType: 'cp' | 'mate', whiteVal: number): stri
   return `${sign}${pawns.toFixed(2)}`;
 }
 
-const WORKER_SCRIPTS = [
-  '/stockfish/stockfish-19-lite-single.js',
-  '/stockfish/stockfish-19-asm.js',
+const WORKER_CANDIDATES: { url: string; backend: 'wasm' | 'asm' }[] = [
+  { url: '/stockfish/stockfish-19-lite-single.js', backend: 'wasm' },
+  { url: '/stockfish/stockfish-19-asm.js', backend: 'asm' },
 ];
 
 class LocalStockfishEngine {
   private worker: Worker | null = null;
   private ready = false;
   private needsFlush = false;
+  private activeBackend: 'wasm' | 'asm' | null = null;
   private initPromise: Promise<void> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private lineListeners: Set<(line: string) => void> = new Set();
   private errorListeners: Set<(err: Error) => void> = new Set();
+
+  public getActiveBackend(): 'wasm' | 'asm' | null {
+    return this.activeBackend;
+  }
+
+  public isEngineReady(): boolean {
+    return Boolean(this.worker && this.ready);
+  }
 
   private resetWorker(err?: Error): void {
     if (this.worker) {
@@ -70,6 +79,7 @@ class LocalStockfishEngine {
     this.worker = null;
     this.ready = false;
     this.needsFlush = false;
+    this.activeBackend = null;
     this.initPromise = null;
     const reason = err ?? new Error('توقف محرك Stockfish المحلي بشكل غير متوقع.');
     for (const listener of this.errorListeners) {
@@ -80,6 +90,15 @@ class LocalStockfishEngine {
 
   public clearCache(): void {
     this.resetWorker(new Error('تمت إعادة تهيئة ذاكرة محرك Stockfish.'));
+  }
+
+  public async warmup(): Promise<'wasm' | 'asm' | null> {
+    try {
+      await this.ensureReady();
+      return this.activeBackend;
+    } catch {
+      return null;
+    }
   }
 
   private async startWorkerScript(scriptUrl: string): Promise<void> {
@@ -174,9 +193,10 @@ class LocalStockfishEngine {
 
     this.initPromise = (async () => {
       let lastError: Error | null = null;
-      for (const scriptUrl of WORKER_SCRIPTS) {
+      for (const candidate of WORKER_CANDIDATES) {
         try {
-          await this.startWorkerScript(scriptUrl);
+          await this.startWorkerScript(candidate.url);
+          this.activeBackend = candidate.backend;
           return;
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
@@ -241,16 +261,29 @@ class LocalStockfishEngine {
       const turn = chess.turn();
       const isGameOver = chess.isGameOver();
       let gameOverReason: string | null = null;
+      let gameOverKey:
+        | 'checkmate_black'
+        | 'checkmate_white'
+        | 'stalemate'
+        | 'threefold'
+        | 'insufficient'
+        | 'draw'
+        | null = null;
 
       if (chess.isCheckmate()) {
+        gameOverKey = turn === 'w' ? 'checkmate_black' : 'checkmate_white';
         gameOverReason = turn === 'w' ? 'كش مات لصالح الأسود' : 'كش مات لصالح الأبيض';
       } else if (chess.isStalemate()) {
+        gameOverKey = 'stalemate';
         gameOverReason = 'تعادل بالردب (Stalemate)';
       } else if (chess.isThreefoldRepetition()) {
+        gameOverKey = 'threefold';
         gameOverReason = 'تعادل بتكرار الوضعية ثلاث مرات';
       } else if (chess.isInsufficientMaterial()) {
+        gameOverKey = 'insufficient';
         gameOverReason = 'تعادل لعدم كفاية القطع';
       } else if (chess.isDraw()) {
+        gameOverKey = 'draw';
         gameOverReason = 'تعادل';
       }
 
@@ -263,6 +296,7 @@ class LocalStockfishEngine {
           isGameOver: true,
           isCheck: chess.inCheck(),
           gameOverReason,
+          gameOverKey,
           bestMove: null,
           ponder: null,
           bestMoveSan: null,
@@ -300,7 +334,11 @@ class LocalStockfishEngine {
       // Cap local WebView worker depth at 15 for responsive mobile performance
       const clampedDepth = Math.max(4, Math.min(15, Math.round(resolvedDepth)));
       const clampedMultiPv = Math.max(1, Math.min(3, Math.round(safeMultiPv)));
-      const uciLog: string[] = ['> info string Local WebView/WASM Engine Active'];
+      const uciLog: string[] = [
+        this.activeBackend === 'asm'
+          ? '> info string Local Stockfish 19 JS Fallback (Offline-Ready)'
+          : '> info string Local Stockfish 19 WebAssembly (Offline-Ready)',
+      ];
       if (autoDepthByElo && typeof playerElo === 'number' && Number.isFinite(playerElo)) {
         uciLog.push(`> info string Elo ${Math.round(playerElo)} -> Auto Search Depth ${clampedDepth}`);
       }

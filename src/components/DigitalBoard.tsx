@@ -4,6 +4,7 @@ import type { Square } from 'chess.js';
 import { motion, useReducedMotion } from 'motion/react';
 import { RotateCcw, ArrowUpDown, Undo2, Navigation, RefreshCw, Edit3 } from 'lucide-react';
 import { ChessPieceSvg, type PieceCode } from './ChessPieces.tsx';
+import { useLanguage } from '../i18n/LanguageContext.tsx';
 import type { BoardOrientation, StockfishAnalysisResult } from '../types/chess.ts';
 
 interface DigitalBoardProps {
@@ -99,6 +100,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
   onApplyFen,
   canUndo,
 }) => {
+  const { t } = useLanguage();
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [showBestArrow, setShowBestArrow] = useState<boolean>(true);
   const [editingFen, setEditingFen] = useState<boolean>(false);
@@ -191,75 +193,75 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
   }, [showBestArrow, analysis?.ponder, orientation]);
 
   return (
-    <section className="flex flex-col border border-slate-700/50 bg-[#121722]/45 backdrop-blur-md rounded-xl overflow-hidden">
+    <section className="flex flex-col border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
       {/* Header strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-700/50">
-        <div className="flex items-center gap-2 min-w-0">
-          <h2 className="text-sm font-semibold text-slate-100 whitespace-nowrap">
-            الرقعة المتزامنة
+      <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h2 className="text-base font-bold text-white whitespace-nowrap">
+            {t.syncBoardTitle}
           </h2>
-          <span className="text-slate-600" aria-hidden="true">
+          <span className="text-slate-400" aria-hidden="true">
             ·
           </span>
           <button
             type="button"
             onClick={onToggleTurn}
-            title="اضغط لتبديل الدور الحالي بين الأبيض والأسود"
-            className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200 truncate rounded px-1.5 py-0.5 bg-cyan-500/10 border border-cyan-500/30 transition-colors"
+            title={t.toggleTurnTooltip}
+            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-cyan-200 hover:text-white truncate rounded-md px-2.5 py-1 bg-cyan-500/20 border border-cyan-400/50 transition-colors"
           >
-            <RefreshCw className="w-3 h-3 shrink-0" />
+            <RefreshCw className="w-3.5 h-3.5 shrink-0" />
             <span>
-              الدور: {turn === 'w' ? 'الأبيض' : 'الأسود'}
+              {t.turnPrefix} {turn === 'w' ? t.whiteName : t.blackName}
             </span>
           </button>
           {analysis && (
-            <span className="text-xs font-mono text-slate-400 truncate" dir="ltr">
+            <span className="text-sm font-mono font-bold text-slate-100 truncate" dir="ltr">
               {analysis.evaluationLabel}
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => setShowBestArrow((v) => !v)}
-            title="إظهار أو إخفاء سهم أفضل نقلة من Stockfish"
-            className={`inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            title={t.arrowTooltip}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
               showBestArrow
-                ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800 border border-transparent'
+                ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60'
+                : 'text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60'
             }`}
           >
-            <Navigation className="w-3.5 h-3.5" />
-            <span>السهم</span>
+            <Navigation className="w-4 h-4" />
+            <span>{t.arrowBtn}</span>
           </button>
           <button
             type="button"
             onClick={onFlipOrientation}
-            title="عكس اتجاه الرقعة"
-            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors whitespace-nowrap shrink-0"
+            title={t.flipTooltip}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            <span>عكس</span>
+            <ArrowUpDown className="w-4 h-4" />
+            <span>{t.flipBtn}</span>
           </button>
           <button
             type="button"
             onClick={onUndoMove}
             disabled={!canUndo}
-            title="تراجع عن آخر نقلة"
-            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
+            title={t.undoTooltip}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <Undo2 className="w-3.5 h-3.5" />
-            <span>تراجع</span>
+            <Undo2 className="w-4 h-4" />
+            <span>{t.undoBtn}</span>
           </button>
           <button
             type="button"
             onClick={onResetBoard}
-            title="إعادة ضبط الوضعية الابتدائية"
-            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors whitespace-nowrap shrink-0"
+            title={t.resetTooltip}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>إعادة</span>
+            <RotateCcw className="w-4 h-4" />
+            <span>{t.resetBtn}</span>
           </button>
         </div>
       </div>
@@ -268,20 +270,20 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
       <div className="p-4 flex items-stretch gap-3" dir="ltr">
         {/* Stockfish Evaluation Bar */}
         <div
-          className="w-7 rounded-md bg-slate-950/65 border border-slate-700/60 relative overflow-hidden flex flex-col justify-between shrink-0"
-          aria-label={`شريط تقييم Stockfish: ${analysis?.evaluationLabel ?? '0.00'}`}
+          className="w-8 rounded-md bg-slate-950/65 border border-slate-500/60 relative overflow-hidden flex flex-col justify-between shrink-0"
+          aria-label={t.evalBarAria(analysis?.evaluationLabel ?? '0.00')}
         >
           <div
-            className="absolute inset-x-0 bottom-0 bg-slate-100 transition-transform duration-300 ease-out origin-bottom"
+            className="absolute inset-x-0 bottom-0 bg-slate-100/85 transition-transform duration-300 ease-out origin-bottom"
             style={{
               height: '100%',
               transform: `scaleY(${whiteBarPct / 100})`,
             }}
           />
-          <span className="relative z-10 text-[10px] font-mono font-semibold text-center pt-1 text-slate-200 mix-blend-difference">
+          <span className="relative z-10 text-[11px] font-mono font-bold text-center pt-1 text-slate-100 mix-blend-difference">
             {analysis && analysis.scoreValue < 0 ? analysis.evaluationLabel : ''}
           </span>
-          <span className="relative z-10 text-[10px] font-mono font-semibold text-center pb-1 text-slate-200 mix-blend-difference">
+          <span className="relative z-10 text-[11px] font-mono font-bold text-center pb-1 text-slate-100 mix-blend-difference">
             {analysis && analysis.scoreValue >= 0 ? analysis.evaluationLabel : '0.0'}
           </span>
         </div>
@@ -304,15 +306,15 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
               const isCheckedKing = checkSquare === sqName;
               const hasOwnPiece = Boolean(cell && cell.color === turn);
 
-              let bgClass = isLight ? 'bg-[#DCE0E6]/85' : 'bg-[#64748B]/75';
+              let bgClass = isLight ? 'bg-[#F0F4EE]/60' : 'bg-[#4D8B55]/65';
               if (isLast) {
-                bgClass = isLight ? 'bg-[#FDE68A]/90' : 'bg-[#CA8A04]/80';
+                bgClass = isLight ? 'bg-amber-200/70' : 'bg-amber-500/65';
               }
               if (isSelected) {
-                bgClass = 'bg-cyan-400/80';
+                bgClass = 'bg-cyan-400/65';
               }
               if (isCheckedKing) {
-                bgClass = 'bg-rose-600/85';
+                bgClass = 'bg-rose-600/75';
               }
 
               const pieceCode = cell
@@ -324,7 +326,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                   key={sqName}
                   type="button"
                   onClick={() => handleSquareClick(sqName, hasOwnPiece)}
-                  aria-label={`مربع ${sqName}`}
+                  aria-label={t.squareAria(sqName)}
                   className={`relative flex items-center justify-center p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${bgClass} ${
                     hasOwnPiece || isLegalTarget ? 'cursor-pointer' : 'cursor-default'
                   }`}
@@ -332,8 +334,8 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                   {/* Rank label on left edge */}
                   {c === 0 && (
                     <span
-                      className={`absolute top-0.5 left-1 text-[9px] font-mono font-semibold leading-none ${
-                        isLight ? 'text-slate-700' : 'text-slate-100'
+                      className={`absolute top-0.5 left-1 text-[11px] font-mono font-bold leading-none drop-shadow ${
+                        isLight ? 'text-[#1F4724]' : 'text-white'
                       }`}
                     >
                       {RANKS[boardRow]}
@@ -342,8 +344,8 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                   {/* File label on bottom edge */}
                   {r === 7 && (
                     <span
-                      className={`absolute bottom-0.5 right-1 text-[9px] font-mono font-semibold leading-none ${
-                        isLight ? 'text-slate-700' : 'text-slate-100'
+                      className={`absolute bottom-0.5 right-1 text-[11px] font-mono font-bold leading-none drop-shadow ${
+                        isLight ? 'text-[#1F4724]' : 'text-white'
                       }`}
                     >
                       {FILES[boardCol]}
@@ -450,26 +452,26 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
       </div>
 
       {/* Footer Recommendation & FEN bar */}
-      <div className="px-4 py-2.5 border-t border-slate-700/50 bg-[#0E131D]/50 space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
+      <div className="px-4 py-3 border-t border-slate-500/45 bg-[#0A0F1A]/60 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs sm:text-sm font-medium text-slate-100 whitespace-nowrap shrink-0">
             {isAnalyzing ? (
-              'جاري تحليل Stockfish...'
+              t.analyzingStockfish
             ) : analysis?.bestMoveSan ? (
               <>
-                توصية Stockfish:{' '}
-                <strong className="font-mono text-emerald-400" dir="ltr">
+                {t.stockfishRecommendation}{' '}
+                <strong className="font-mono text-sm sm:text-base font-bold text-emerald-300" dir="ltr">
                   {analysis.bestMoveSan} ({analysis.bestMove})
                 </strong>
               </>
             ) : (
-              'مصفوفة FEN النشطة'
+              t.activeFenMatrix
             )}
           </span>
           <div className="flex items-center gap-2 min-w-0">
             <code
               dir="ltr"
-              className="text-[11px] font-mono text-slate-300 truncate select-all"
+              className="text-xs sm:text-sm font-mono font-medium text-slate-100 truncate select-all"
               title={fen}
             >
               {fen}
@@ -477,10 +479,10 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
             <button
               type="button"
               onClick={() => setEditingFen((v) => !v)}
-              title="تعديل أو لصق وضعية FEN يدوياً"
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 rounded transition-colors shrink-0"
+              title={t.editFenTooltip}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs sm:text-sm font-semibold text-white bg-slate-900/75 hover:bg-slate-800 border border-slate-600/70 rounded transition-colors shrink-0"
             >
-              <Edit3 className="w-3 h-3 text-cyan-400" />
+              <Edit3 className="w-3.5 h-3.5 text-cyan-300" />
               <span>FEN</span>
             </button>
           </div>
@@ -495,10 +497,10 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                 setEditingFen(false);
                 setFenError(null);
               } else {
-                setFenError('تنسيق FEN غير صالح أو غير قانوني.');
+                setFenError(t.invalidFenError);
               }
             }}
-            className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80"
+            className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-600/60"
           >
             <input
               type="text"
@@ -508,16 +510,16 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                 setFenDraft(e.target.value);
                 setFenError(null);
               }}
-              placeholder="Paste FEN string..."
-              className="flex-1 min-w-[180px] bg-[#070A10] border border-slate-700 rounded px-2.5 py-1 text-[11px] font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
+              placeholder={t.fenPlaceholder}
+              className="flex-1 min-w-[180px] bg-[#070A10] border border-slate-500/70 rounded px-3 py-1.5 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-cyan-400"
             />
             <button
               type="submit"
-              className="px-2.5 py-1 text-[11px] font-semibold bg-cyan-600 hover:bg-cyan-500 text-slate-950 rounded transition-colors shrink-0"
+              className="px-3 py-1.5 text-xs sm:text-sm font-bold bg-cyan-400 hover:bg-cyan-300 text-slate-950 rounded transition-colors shrink-0"
             >
-              تطبيق FEN
+              {t.applyFenBtn}
             </button>
-            {fenError && <span className="text-[11px] text-rose-400">{fenError}</span>}
+            {fenError && <span className="text-xs sm:text-sm font-medium text-rose-300">{fenError}</span>}
           </form>
         )}
       </div>

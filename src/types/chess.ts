@@ -67,12 +67,21 @@ export interface UciLineInfo {
   timeMs: number;
 }
 
+export type GameOverReasonKey =
+  | 'checkmate_black'
+  | 'checkmate_white'
+  | 'stalemate'
+  | 'threefold'
+  | 'insufficient'
+  | 'draw';
+
 export interface StockfishAnalysisResult {
   fen: string;
   turn: 'w' | 'b';
   isGameOver: boolean;
   isCheck: boolean;
   gameOverReason: string | null;
+  gameOverKey?: GameOverReasonKey | null;
   bestMove: string | null;
   ponder: string | null;
   bestMoveSan: string | null;

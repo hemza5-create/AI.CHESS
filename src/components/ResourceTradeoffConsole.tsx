@@ -6,6 +6,7 @@ import type {
   SquareMetric,
   VisionConfig,
 } from '../types/chess.ts';
+import { useLanguage } from '../i18n/LanguageContext.tsx';
 
 interface ResourceTradeoffConsoleProps {
   config: VisionConfig;
@@ -22,12 +23,6 @@ interface ResourceTradeoffConsoleProps {
 }
 
 const RESOLUTIONS: ScanResolution[] = [256, 512, 800];
-const ELO_PRESETS = [
-  { elo: 1000, label: 'مبتدئ 1000' },
-  { elo: 1500, label: 'متوسط 1500' },
-  { elo: 2000, label: 'متقدم 2000' },
-  { elo: 2500, label: 'أستاذ 2500' },
-];
 
 export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = ({
   config,
@@ -42,6 +37,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
   onChangePlayerElo,
   onToggleAutoDepthByElo,
 }) => {
+  const { t } = useLanguage();
   const [eloDraft, setEloDraft] = useState<string>(String(playerElo));
 
   useEffect(() => {
@@ -65,17 +61,17 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
   const pressureTone =
     usagePct >= 95
-      ? 'text-rose-400'
+      ? 'text-rose-300'
       : usagePct >= 70
-      ? 'text-amber-400'
-      : 'text-emerald-400';
+      ? 'text-amber-300'
+      : 'text-emerald-300';
 
   const pressureLabel =
     usagePct >= 95
-      ? 'تجاوز ميزانية الإطار (تأخر محتمل)'
+      ? t.pressureOverBudget
       : usagePct >= 70
-      ? 'ضغط معالجة متوسط'
-      : 'أداء مستقر دون تأخر';
+      ? t.pressureMedium
+      : t.pressureStable;
 
   // Build SVG polyline points for actual totalMs latency
   const chartW = 460;
@@ -96,21 +92,21 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
     chartH - Math.min(1, budgetMs / maxChartMs) * (chartH - 10) - 4;
 
   return (
-    <section className="border border-slate-700/50 bg-[#121722]/45 backdrop-blur-md rounded-xl overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-700/50">
+    <section className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
         <div className="flex items-center gap-2">
-          <Gauge className="w-4 h-4 text-cyan-400" />
-          <h2 className="text-sm font-semibold text-slate-100">
-            مقايضة استهلاك الموارد ودقة الرصد (OpenCV Resource Profiler)
+          <Gauge className="w-4 h-4 text-cyan-300" />
+          <h2 className="text-base font-bold text-white">
+            {t.profilerTitle}
           </h2>
         </div>
 
-        <div className="flex items-center gap-3 text-xs">
-          <span className={`font-medium ${pressureTone}`}>● {pressureLabel}</span>
-          <span className="text-slate-600" aria-hidden="true">
+        <div className="flex items-center gap-3 text-xs sm:text-sm">
+          <span className={`font-semibold ${pressureTone}`}>● {pressureLabel}</span>
+          <span className="text-slate-400" aria-hidden="true">
             ·
           </span>
-          <span className="font-mono text-slate-300 tabular-nums" dir="ltr">
+          <span className="font-mono font-semibold text-slate-100 tabular-nums" dir="ltr">
             {telemetry ? `${telemetry.totalMs.toFixed(1)} ms / ${budgetMs.toFixed(1)} ms` : '—'}
           </span>
         </div>
@@ -121,22 +117,22 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
         <div className="lg:col-span-5 space-y-4">
           {/* Scan Resolution Selector */}
           <div>
-            <div className="flex items-center justify-between text-xs mb-2">
-              <span className="text-slate-300 font-medium">دقة المسح (Scan Resolution)</span>
-              <span className="font-mono text-cyan-300" dir="ltr">
+            <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
+              <span className="text-slate-100 font-semibold">{t.scanResolutionLabel}</span>
+              <span className="font-mono font-bold text-cyan-200" dir="ltr">
                 {config.resolution}×{config.resolution} px
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#0B0E14]/45 rounded-lg border border-slate-700/50">
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#070B12]/65 rounded-lg border border-slate-500/50">
               {RESOLUTIONS.map((res) => (
                 <button
                   key={res}
                   type="button"
                   onClick={() => onChangeConfig({ resolution: res })}
-                  className={`py-1.5 text-xs font-mono rounded-md transition-colors ${
+                  className={`py-2 text-xs sm:text-sm font-mono rounded-md transition-colors ${
                     config.resolution === res
-                      ? 'bg-cyan-600 text-slate-950 font-semibold'
-                      : 'text-slate-400 hover:text-slate-200'
+                      ? 'bg-cyan-400 text-slate-950 font-bold'
+                      : 'text-slate-100 hover:text-white hover:bg-slate-800/75'
                   }`}
                 >
                   {res}×{res}
@@ -147,11 +143,11 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
           {/* Target FPS Slider (up to 60 FPS) */}
           <div>
-            <div className="flex items-center justify-between text-xs mb-1.5">
-              <label htmlFor="fps-slider" className="text-slate-300 font-medium">
-                معدل تكرار الإطارات (Target FPS)
+            <div className="flex items-center justify-between text-xs sm:text-sm mb-1.5">
+              <label htmlFor="fps-slider" className="text-slate-100 font-semibold">
+                {t.targetFpsLabel}
               </label>
-              <span className="font-mono text-cyan-300 tabular-nums" dir="ltr">
+              <span className="font-mono font-bold text-cyan-200 tabular-nums" dir="ltr">
                 {config.targetFps} FPS ({budgetMs.toFixed(1)} ms)
               </span>
             </div>
@@ -165,16 +161,16 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
               onChange={(e) => onChangeConfig({ targetFps: Number(e.target.value) })}
               className="w-full cursor-pointer"
             />
-            <div className="mt-1.5 grid grid-cols-4 gap-1.5" dir="ltr">
+            <div className="mt-2 grid grid-cols-4 gap-1.5" dir="ltr">
               {[15, 30, 45, 60].map((fpsPreset) => (
                 <button
                   key={fpsPreset}
                   type="button"
                   onClick={() => onChangeConfig({ targetFps: fpsPreset })}
-                  className={`py-1 text-[11px] font-mono rounded border transition-colors ${
+                  className={`py-1.5 text-xs font-mono font-semibold rounded border transition-colors ${
                     config.targetFps === fpsPreset
-                      ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 font-semibold'
-                      : 'bg-[#0B0E14] border-slate-800 text-slate-400 hover:text-slate-200'
+                      ? 'bg-cyan-500/25 border-cyan-400/70 text-cyan-200 font-bold'
+                      : 'bg-[#070B12]/65 border-slate-500/60 text-slate-100 hover:text-white'
                   }`}
                 >
                   {fpsPreset} FPS
@@ -186,11 +182,11 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
           {/* Canny Edge Threshold & Motion Delta Threshold */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="flex items-center justify-between text-xs mb-1.5">
-                <label htmlFor="canny-slider" className="text-slate-400">
-                  عتبة حواف Canny
+              <div className="flex items-center justify-between text-xs sm:text-sm mb-1.5">
+                <label htmlFor="canny-slider" className="text-slate-100 font-medium">
+                  {t.cannyThresholdLabel}
                 </label>
-                <span className="font-mono text-slate-200 tabular-nums">
+                <span className="font-mono font-bold text-white tabular-nums">
                   {config.cannyThreshold}
                 </span>
               </div>
@@ -207,11 +203,11 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
             </div>
 
             <div>
-              <div className="flex items-center justify-between text-xs mb-1.5">
-                <label htmlFor="motion-slider" className="text-slate-400">
-                  حساسية تغير المربع
+              <div className="flex items-center justify-between text-xs sm:text-sm mb-1.5">
+                <label htmlFor="motion-slider" className="text-slate-100 font-medium">
+                  {t.motionSensitivityLabel}
                 </label>
-                <span className="font-mono text-slate-200 tabular-nums">
+                <span className="font-mono font-bold text-white tabular-nums">
                   {config.motionThreshold}
                 </span>
               </div>
@@ -228,26 +224,26 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1">
-            <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <label className="inline-flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-100 cursor-pointer">
               <input
                 type="checkbox"
                 checked={config.blurEnabled}
                 onChange={(e) => onChangeConfig({ blurEnabled: e.target.checked })}
-                className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+                className="rounded border-slate-500 bg-slate-900 text-cyan-400 focus:ring-cyan-400"
               />
-              <span>تفعيل مرشح GaussianBlur (5×5) لتقليل ضوضاء الكاميرا</span>
+              <span>{t.gaussianBlurLabel}</span>
             </label>
-            <span className="text-[11px] font-mono text-slate-400" dir="ltr">
+            <span className="text-xs sm:text-sm font-mono font-semibold text-slate-200" dir="ltr">
               Δmax: {maxDelta.toFixed(1)}
             </span>
           </div>
 
           {/* Player Rating (Elo) & Automatic Stockfish Depth Mapping */}
-          <div className="pt-3 border-t border-slate-800 space-y-2.5">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <label htmlFor="elo-number" className="text-slate-200 font-medium">
-                مستوى اللاعب / التقييم (Elo)
+          <div className="pt-3.5 border-t border-slate-600/60 space-y-3">
+            <div className="flex items-center justify-between gap-2 text-xs sm:text-sm">
+              <label htmlFor="elo-number" className="text-white font-semibold">
+                {t.playerEloLabel}
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -272,16 +268,16 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                     }
                   }}
                   dir="ltr"
-                  className="w-20 bg-[#0B0E14] border border-slate-700 rounded px-2 py-1 text-xs font-mono text-cyan-300 text-center focus:outline-none focus:border-cyan-500"
+                  className="w-24 bg-[#070B12] border border-slate-500/70 rounded px-2.5 py-1.5 text-sm font-mono font-bold text-cyan-200 text-center focus:outline-none focus:border-cyan-400"
                 />
-                <span className="text-[11px] font-mono text-emerald-400 tabular-nums" dir="ltr">
-                  → Depth {effectiveDepth}
+                <span className="text-xs sm:text-sm font-mono font-bold text-emerald-300 tabular-nums" dir="ltr">
+                  → {t.depthShort} {effectiveDepth}
                 </span>
               </div>
             </div>
 
             <input
-              aria-label="شريط تقييم اللاعب Elo"
+              aria-label={t.eloSliderAria}
               type="range"
               min={800}
               max={2800}
@@ -291,16 +287,16 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
               className="w-full cursor-pointer"
             />
 
-            <div className="grid grid-cols-4 gap-1.5">
-              {ELO_PRESETS.map((preset) => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              {t.eloPresets.map((preset) => (
                 <button
                   key={preset.elo}
                   type="button"
                   onClick={() => onChangePlayerElo(preset.elo)}
-                  className={`py-1 px-1.5 text-[11px] rounded border transition-colors whitespace-nowrap ${
+                  className={`py-1.5 px-2 text-xs font-semibold rounded border transition-colors whitespace-nowrap ${
                     Math.abs(playerElo - preset.elo) < 25
-                      ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 font-semibold'
-                      : 'bg-[#0B0E14] border-slate-800 text-slate-400 hover:text-slate-200'
+                      ? 'bg-cyan-500/25 border-cyan-400/70 text-cyan-200 font-bold'
+                      : 'bg-[#070B12]/65 border-slate-500/60 text-slate-100 hover:text-white'
                   }`}
                 >
                   {preset.label}
@@ -308,31 +304,31 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
               ))}
             </div>
 
-            <label className="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-0.5">
+            <label className="inline-flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-100 cursor-pointer pt-0.5">
               <input
                 type="checkbox"
                 checked={autoDepthByElo}
                 onChange={onToggleAutoDepthByElo}
-                className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500"
+                className="rounded border-slate-500 bg-slate-900 text-cyan-400 focus:ring-cyan-400"
               />
-              <span>ضبط عمق بحث Stockfish تلقائياً حسب تقييم اللاعب</span>
+              <span>{t.autoDepthByEloLabel}</span>
             </label>
           </div>
         </div>
 
         {/* Middle: Real-time Frame Budget SVG Chart & Pipeline Breakdown */}
         <div className="lg:col-span-4 flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="inline-flex items-center gap-1.5 text-slate-300 font-medium">
-              <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-              <span>زمن المعالجة الفعلي مقابل ميزانية الإطار</span>
+          <div className="flex items-center justify-between text-xs sm:text-sm">
+            <span className="inline-flex items-center gap-1.5 text-slate-100 font-semibold">
+              <Cpu className="w-4 h-4 text-cyan-300" />
+              <span>{t.frameTimeVsBudgetLabel}</span>
             </span>
-            <span className={`font-mono font-semibold tabular-nums ${pressureTone}`} dir="ltr">
+            <span className={`font-mono font-bold tabular-nums ${pressureTone}`} dir="ltr">
               {usagePct.toFixed(0)}%
             </span>
           </div>
 
-          <div className="bg-[#0B0E14]/45 border border-slate-700/50 rounded-lg p-2.5">
+          <div className="bg-[#070B12]/65 border border-slate-500/55 rounded-lg p-3">
             <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full h-24 overflow-visible">
               {/* Budget limit dashed line */}
               <line
@@ -340,26 +336,27 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                 y1={budgetLineY}
                 x2={chartW}
                 y2={budgetLineY}
-                stroke="#F59E0B"
-                strokeWidth="1"
+                stroke="#FBBF24"
+                strokeWidth="1.2"
                 strokeDasharray="4 3"
               />
               <text
                 x={4}
-                y={Math.max(10, budgetLineY - 4)}
-                fill="#F59E0B"
-                fontSize="9"
+                y={Math.max(12, budgetLineY - 5)}
+                fill="#FDE68A"
+                fontSize="11"
+                fontWeight="600"
                 fontFamily="IBM Plex Mono, monospace"
               >
-                Budget {budgetMs.toFixed(1)}ms
+                {t.budgetSvgText(budgetMs.toFixed(1))}
               </text>
 
               {/* Latency trace */}
               {polylinePoints && (
                 <polyline
                   fill="none"
-                  stroke="#06B6D4"
-                  strokeWidth="1.8"
+                  stroke="#22D3EE"
+                  strokeWidth="2"
                   points={polylinePoints}
                 />
               )}
@@ -367,28 +364,28 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
           </div>
 
           {/* Pipeline stage timings */}
-          <div className="grid grid-cols-4 gap-2 text-center bg-[#0B0E14]/45 border border-slate-700/50 rounded-lg p-2.5">
+          <div className="grid grid-cols-4 gap-2 text-center bg-[#070B12]/65 border border-slate-500/55 rounded-lg p-3">
             <div>
-              <div className="text-[10px] text-slate-500">Capture</div>
-              <div className="text-xs font-mono text-slate-200 tabular-nums" dir="ltr">
+              <div className="text-xs font-medium text-slate-200">{t.stageCapture}</div>
+              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.captureMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-500">Blur 5×5</div>
-              <div className="text-xs font-mono text-slate-200 tabular-nums" dir="ltr">
+              <div className="text-xs font-medium text-slate-200">{t.stageBlur}</div>
+              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.blurMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-500">Canny</div>
-              <div className="text-xs font-mono text-slate-200 tabular-nums" dir="ltr">
+              <div className="text-xs font-medium text-slate-200">{t.stageCanny}</div>
+              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.cannyMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-500">Matrix 8×8</div>
-              <div className="text-xs font-mono text-slate-200 tabular-nums" dir="ltr">
+              <div className="text-xs font-medium text-slate-200">{t.stageMatrix}</div>
+              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.matrixMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
@@ -397,17 +394,17 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
         {/* Right: Live 8x8 Extracted Matrix Snapshot */}
         <div className="lg:col-span-3 flex flex-col">
-          <div className="flex items-center justify-between text-xs mb-2">
-            <span className="inline-flex items-center gap-1.5 text-slate-300 font-medium">
-              <Grid3X3 className="w-3.5 h-3.5 text-cyan-400" />
-              <span>مصفوفة الفروقات 8×8</span>
+          <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
+            <span className="inline-flex items-center gap-1.5 text-slate-100 font-semibold">
+              <Grid3X3 className="w-4 h-4 text-cyan-300" />
+              <span>{t.matrixDiffTitle}</span>
             </span>
-            <span className="text-[11px] font-mono text-slate-500">Δ Luma</span>
+            <span className="text-xs font-mono font-semibold text-slate-200">Δ Luma</span>
           </div>
 
           <div
             dir="ltr"
-            className="grid grid-cols-8 gap-0.5 p-1.5 bg-[#0B0E14]/45 border border-slate-700/50 rounded-lg aspect-square max-w-[200px] mx-auto w-full"
+            className="grid grid-cols-8 gap-0.5 p-1.5 bg-[#070B12]/65 border border-slate-500/55 rounded-lg aspect-square max-w-[220px] mx-auto w-full"
           >
             {squareMetrics
               ? squareMetrics.flat().map((sq) => {
@@ -419,10 +416,10 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                       title={`${sq.square}: Δ=${sq.delta.toFixed(1)}, Edge=${sq.edgeDensity.toFixed(0)}%`}
                       style={{
                         backgroundColor: active
-                          ? `rgba(16, 185, 129, ${(0.25 + norm * 0.65).toFixed(2)})`
+                          ? `rgba(16, 185, 129, ${(0.3 + norm * 0.55).toFixed(2)})`
                           : `rgba(6, 182, 212, ${(norm * 0.35).toFixed(2)})`,
                       }}
-                      className="flex items-center justify-center rounded-[2px] border border-slate-800/80 text-[8px] font-mono text-slate-200 tabular-nums"
+                      className="flex items-center justify-center rounded-[2px] border border-slate-600/60 text-[10px] font-mono font-bold text-white tabular-nums"
                     >
                       {sq.delta >= 1 ? sq.delta.toFixed(0) : ''}
                     </div>
@@ -431,7 +428,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
               : Array.from({ length: 64 }).map((_, i) => (
                   <div
                     key={i}
-                    className="rounded-[2px] border border-slate-800/60 bg-slate-900/40"
+                    className="rounded-[2px] border border-slate-600/50 bg-slate-900/35"
                   />
                 ))}
           </div>

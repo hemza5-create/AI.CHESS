@@ -17,7 +17,9 @@ const manifestAdditions = [
   '<uses-permission android:name="android.permission.CAMERA" />',
   '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
   '<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />',
+  '<uses-permission android:name="android.permission.VIDEO_CAPTURE" />',
   '<uses-feature android:name="android.hardware.camera" android:required="false" />',
+  '<uses-feature android:name="android.hardware.camera.any" android:required="false" />',
   '<uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />',
 ];
 
@@ -35,7 +37,7 @@ if (missingLines.length > 0) {
   console.log('[configure-android] Added CAMERA permissions & features to AndroidManifest.xml');
 }
 
-// 2. Patch MainActivity.java or MainActivity.kt to request runtime CAMERA permission cleanly
+// 2. Patch MainActivity.java or MainActivity.kt to bridge WebView PermissionRequest + runtime CAMERA permission
 const javaBaseDir = path.join(androidMainDir, 'java');
 function findMainActivity(dir) {
   if (!fs.existsSync(dir)) return null;
@@ -54,12 +56,18 @@ function findMainActivity(dir) {
 const mainActivityPath = findMainActivity(javaBaseDir);
 if (mainActivityPath && mainActivityPath.endsWith('.java')) {
   let javaSrc = fs.readFileSync(mainActivityPath, 'utf8');
-  if (!javaSrc.includes('Manifest.permission.CAMERA')) {
+  if (!javaSrc.includes('BridgeWebChromeClient')) {
     const importsBlock = [
       'import android.Manifest;',
       'import android.content.pm.PackageManager;',
-      'import android.os.Build;',
       'import android.os.Bundle;',
+      'import android.webkit.PermissionRequest;',
+      'import androidx.annotation.NonNull;',
+      'import androidx.core.app.ActivityCompat;',
+      'import androidx.core.content.ContextCompat;',
+      'import com.getcapacitor.BridgeWebChromeClient;',
+      'import java.util.ArrayList;',
+      'import java.util.List;',
     ].join('\n');
 
     javaSrc = javaSrc.replace(
@@ -68,12 +76,79 @@ if (mainActivityPath && mainActivityPath.endsWith('.java')) {
     );
 
     const onCreateBody = `
+    private static final int WEB_MEDIA_PERMISSION_REQUEST_CODE = 1001;
+    private PermissionRequest pendingWebPermissionRequest;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{ Manifest.permission.CAMERA }, 1001);
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{ Manifest.permission.CAMERA }, WEB_MEDIA_PERMISSION_REQUEST_CODE);
+        }
+
+        if (this.bridge != null && this.bridge.getWebView() != null) {
+            this.bridge.getWebView().setWebChromeClient(new BridgeWebChromeClient(this.bridge) {
+                @Override
+                public void onPermissionRequest(final PermissionRequest request) {
+                    runOnUiThread(() -> {
+                        List<String> neededOsPermissions = new ArrayList<>();
+                        for (String res : request.getResources()) {
+                            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res)
+                                    && ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                neededOsPermissions.add(Manifest.permission.CAMERA);
+                            }
+                            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res)
+                                    && ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                neededOsPermissions.add(Manifest.permission.RECORD_AUDIO);
+                            }
+                        }
+
+                        if (neededOsPermissions.isEmpty()) {
+                            request.grant(request.getResources());
+                        } else {
+                            pendingWebPermissionRequest = request;
+                            ActivityCompat.requestPermissions(
+                                MainActivity.this,
+                                neededOsPermissions.toArray(new String[0]),
+                                WEB_MEDIA_PERMISSION_REQUEST_CODE
+                            );
+                        }
+                    });
+                }
+
+                @Override
+                public void onPermissionRequestCanceled(PermissionRequest request) {
+                    super.onPermissionRequestCanceled(request);
+                    if (pendingWebPermissionRequest == request) {
+                        pendingWebPermissionRequest = null;
+                    }
+                }
+            });
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == WEB_MEDIA_PERMISSION_REQUEST_CODE && pendingWebPermissionRequest != null) {
+            final PermissionRequest req = pendingWebPermissionRequest;
+            pendingWebPermissionRequest = null;
+            boolean allGranted = grantResults.length > 0;
+            for (int result : grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+            final boolean granted = allGranted;
+            runOnUiThread(() -> {
+                if (granted) {
+                    req.grant(req.getResources());
+                } else {
+                    req.deny();
+                }
+            });
         }
     }
 `;
@@ -82,16 +157,19 @@ if (mainActivityPath && mainActivityPath.endsWith('.java')) {
       `public class MainActivity extends BridgeActivity {\n${onCreateBody}`
     );
     fs.writeFileSync(mainActivityPath, javaSrc, 'utf8');
-    console.log(`[configure-android] Patched ${mainActivityPath} for runtime CAMERA permission`);
+    console.log(`[configure-android] Patched ${mainActivityPath} with BridgeWebChromeClient & CAMERA permission`);
   }
 } else if (mainActivityPath && mainActivityPath.endsWith('.kt')) {
   let ktSrc = fs.readFileSync(mainActivityPath, 'utf8');
-  if (!ktSrc.includes('Manifest.permission.CAMERA')) {
+  if (!ktSrc.includes('BridgeWebChromeClient')) {
     const importsBlock = [
       'import android.Manifest',
       'import android.content.pm.PackageManager',
-      'import android.os.Build',
       'import android.os.Bundle',
+      'import android.webkit.PermissionRequest',
+      'import androidx.core.app.ActivityCompat',
+      'import androidx.core.content.ContextCompat',
+      'import com.getcapacitor.BridgeWebChromeClient',
     ].join('\n');
 
     ktSrc = ktSrc.replace(
@@ -100,12 +178,59 @@ if (mainActivityPath && mainActivityPath.endsWith('.java')) {
     );
 
     const onCreateBody = `
+    private val webMediaPermissionRequestCode = 1001
+    private var pendingWebPermissionRequest: PermissionRequest? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), 1001)
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), webMediaPermissionRequestCode)
+        }
+
+        bridge?.webView?.webChromeClient = object : BridgeWebChromeClient(bridge) {
+            override fun onPermissionRequest(request: PermissionRequest) {
+                runOnUiThread {
+                    val needed = mutableListOf<String>()
+                    for (res in request.resources) {
+                        if (res == PermissionRequest.RESOURCE_VIDEO_CAPTURE &&
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            needed.add(Manifest.permission.CAMERA)
+                        }
+                        if (res == PermissionRequest.RESOURCE_AUDIO_CAPTURE &&
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            needed.add(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                    if (needed.isEmpty()) {
+                        request.grant(request.resources)
+                    } else {
+                        pendingWebPermissionRequest = request
+                        ActivityCompat.requestPermissions(this@MainActivity, needed.toTypedArray(), webMediaPermissionRequestCode)
+                    }
+                }
+            }
+
+            override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                super.onPermissionRequestCanceled(request)
+                if (pendingWebPermissionRequest == request) {
+                    pendingWebPermissionRequest = null
+                }
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == webMediaPermissionRequestCode) {
+            val req = pendingWebPermissionRequest ?: return
+            pendingWebPermissionRequest = null
+            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            runOnUiThread {
+                if (allGranted) req.grant(req.resources) else req.deny()
+            }
         }
     }
 `;
@@ -114,7 +239,7 @@ if (mainActivityPath && mainActivityPath.endsWith('.java')) {
       `class MainActivity : BridgeActivity() {\n${onCreateBody}`
     );
     fs.writeFileSync(mainActivityPath, ktSrc, 'utf8');
-    console.log(`[configure-android] Patched ${mainActivityPath} for runtime CAMERA permission`);
+    console.log(`[configure-android] Patched ${mainActivityPath} with BridgeWebChromeClient & CAMERA permission`);
   }
 }
 
