@@ -1,39 +1,57 @@
-name: Deno
+name: Build Capacitor Android APK
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  test:
+  build-android:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup repo
-        uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
+          cache: "npm"
 
-      - name: Install npm dependencies
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
+      - name: Build web project
+        run: npm run build
 
-      - name: Run Deno linter
-        run: deno lint src/ server.ts
+      - name: Install Capacitor CLI and Core
+        run: npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: Run TypeScript check and build
+      - name: Initialize Capacitor and add Android platform
         run: |
-          npm run lint
-          npm run build
+          if [ ! -f capacitor.config.ts ] && [ ! -f capacitor.config.json ]; then
+            npx cap init "AI Chess" "com.hemza.aichess" --web-dir dist
+          fi
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
 
-      - name: Run Deno tests
-        run: deno test --allow-all --permit-no-files
+      - name: Build Debug APK with Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
