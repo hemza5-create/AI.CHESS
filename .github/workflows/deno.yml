@@ -1,3 +1,4 @@
+إليك الكود المحدث بالكامل، دون نصوص عربية، وجاهز للنسخ مباشرة لحل مشكلة ملف القفل:
 name: Build Capacitor Android APK
 
 on:
@@ -26,7 +27,7 @@ jobs:
           java-version: "21"
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install
 
       - name: Build web project
         run: npm run build
@@ -55,3 +56,4 @@ jobs:
         with:
           name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
