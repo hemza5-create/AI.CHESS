@@ -12,13 +12,8 @@ import {
   VolumeX,
   ScanSearch,
   Loader2,
-  ShieldCheck,
-  X,
-  CheckCircle2,
 } from 'lucide-react';
 import type {
-  BoardOrientation,
-  CapturedBoardPreview,
   CaptureSource,
   Point2D,
   RoiQuad,
@@ -57,16 +52,7 @@ interface LiveVisionStageProps {
   moveSoundEnabled: boolean;
   onToggleMoveSound: () => void;
   isScanningFen: boolean;
-  scanError: string | null;
   onScanBoardFen: () => void;
-  orientation: BoardOrientation;
-  onChangeOrientation: (orientation: BoardOrientation) => void;
-  opponentMoveOnly: boolean;
-  onToggleOpponentMoveOnly: () => void;
-  capturedPreview: CapturedBoardPreview | null;
-  isAnalyzingBestMove: boolean;
-  onClearCapturedPreview: () => void;
-  onApplyBestMoveFromPreview: (uci: string) => void;
 }
 
 export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
@@ -98,16 +84,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
   moveSoundEnabled,
   onToggleMoveSound,
   isScanningFen,
-  scanError,
   onScanBoardFen,
-  orientation,
-  onChangeOrientation,
-  opponentMoveOnly,
-  onToggleOpponentMoveOnly,
-  capturedPreview,
-  isAnalyzingBestMove,
-  onClearCapturedPreview,
-  onApplyBestMoveFromPreview,
 }) => {
   const { t } = useLanguage();
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -156,42 +133,42 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
   return (
     <section className="flex flex-col border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
       {/* Source & Stream Controls Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
-        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-[#070A10]/65 rounded-lg border border-slate-500/50">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-[#070A10]/65 rounded-lg border border-slate-500/50">
           <button
             type="button"
             onClick={() => onSelectSource('virtual')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
               source === 'virtual'
                 ? 'bg-cyan-400 text-slate-950 shadow-sm'
                 : 'text-slate-100 hover:text-white hover:bg-slate-800/75'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
+            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.sourceVirtual}</span>
           </button>
           <button
             type="button"
             onClick={() => onSelectSource('camera')}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
               source === 'camera'
                 ? 'bg-cyan-400 text-slate-950 shadow-sm'
                 : 'text-slate-100 hover:text-white hover:bg-slate-800/75'
             }`}
           >
-            <Camera className="w-4 h-4" />
+            <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.sourceCamera}</span>
           </button>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
               source === 'image'
                 ? 'bg-cyan-400 text-slate-950 shadow-sm'
                 : 'text-slate-100 hover:text-white hover:bg-slate-800/75'
             }`}
           >
-            <Upload className="w-4 h-4" />
+            <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.sourceImage}</span>
           </button>
           <input
@@ -211,7 +188,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             <button
               type="button"
               onClick={onToggleStream}
-              className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-md transition-colors whitespace-nowrap shrink-0 shadow-sm ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-md transition-colors whitespace-nowrap shrink-0 shadow-sm ${
                 isStreaming
                   ? 'bg-rose-600 hover:bg-rose-500 text-white'
                   : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
@@ -219,12 +196,12 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             >
               {isStreaming ? (
                 <>
-                  <Square className="w-4 h-4" />
+                  <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   <span>{t.stopCapture}</span>
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4" />
+                  <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   <span>{t.startCapture}</span>
                 </>
               )}
@@ -234,8 +211,8 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
       </div>
 
       {/* Vision Pipeline Layer Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-3 bg-[#0A0F1A]/55 border-b border-slate-500/45">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-[#0A0F1A]/55 border-b border-slate-500/45">
+        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
           {(
             [
               ['original', t.viewOriginal],
@@ -248,7 +225,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
               key={mode}
               type="button"
               onClick={() => onChangeViewMode(mode)}
-              className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              className={`px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 viewMode === mode
                   ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60'
                   : 'text-slate-100 hover:text-white bg-slate-900/45 border border-slate-700/50 hover:border-slate-500/60'
@@ -259,18 +236,18 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={onScanBoardFen}
             disabled={isScanningFen}
             title={t.scanAiTooltip}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
           >
             {isScanningFen ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
             ) : (
-              <ScanSearch className="w-4 h-4" />
+              <ScanSearch className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             )}
             <span>{isScanningFen ? t.scanningAiBtn : t.scanAiBtn}</span>
           </button>
@@ -278,16 +255,16 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             type="button"
             onClick={onToggleMoveSound}
             title={t.detectionSoundTooltip}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 ${
               moveSoundEnabled
                 ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-200'
                 : 'border-slate-600 bg-slate-900/55 text-slate-100 hover:text-white'
             }`}
           >
             {moveSoundEnabled ? (
-              <Volume2 className="w-4 h-4" />
+              <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             ) : (
-              <VolumeX className="w-4 h-4" />
+              <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             )}
             <span>{t.detectionSoundBtn}</span>
           </button>
@@ -295,25 +272,25 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             type="button"
             onClick={onCalibrateBaseline}
             title={t.calibrateBaselineTooltip}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/65 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/65 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <Crosshair className="w-4 h-4 text-cyan-300" />
+            <Crosshair className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300" />
             <span>{t.calibrateBaselineBtn}</span>
           </button>
           <button
             type="button"
             onClick={onResetRoi}
             title={t.resetRoiTooltip}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/65 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/65 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.resetRoiBtn}</span>
           </button>
         </div>
       </div>
 
       {/* Live Video / Canvas Viewport */}
-      <div className="p-4">
+      <div className="p-2.5 sm:p-4">
         {source !== 'virtual' && (
           <div className="mb-3 px-3.5 py-2.5 rounded-lg border border-cyan-400/45 bg-[#071520]/70 text-xs sm:text-sm text-slate-100 leading-relaxed">
             {t.roiGuideBefore}{' '}
@@ -322,10 +299,10 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           </div>
         )}
 
-        {(errorMsg || scanError) && (
+        {errorMsg && (
           <div className="mb-3 px-3.5 py-2.5 rounded-lg border border-rose-400/60 bg-rose-950/75 text-sm font-medium text-rose-100 flex flex-wrap items-center justify-between gap-2">
-            <span>{scanError ?? errorMsg}</span>
-            {errorMsg && source === 'camera' && (
+            <span>{errorMsg}</span>
+            {source === 'camera' && (
               <button
                 type="button"
                 onClick={() => void onSelectSource('camera')}
@@ -343,7 +320,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           onPointerMove={handlePointerMoveStage}
           onPointerUp={handlePointerUpStage}
           onPointerLeave={handlePointerUpStage}
-          className="relative w-full aspect-square max-w-[520px] mx-auto bg-[#070A10]/45 border border-slate-500/60 rounded-lg overflow-hidden select-none"
+          className="relative w-full aspect-square max-w-[330px] sm:max-w-[520px] mx-auto bg-[#070A10]/45 border border-slate-500/60 rounded-lg overflow-hidden select-none"
         >
           {/* Underlying raw video element (camera) */}
           <video
@@ -434,12 +411,12 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
                   left: `${pt.x * 100}%`,
                   top: `${pt.y * 100}%`,
                 }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-cyan-400 border-2 border-slate-950 shadow cursor-grab active:cursor-grabbing hover:scale-110 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                className="absolute -translate-x-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-cyan-400 border-2 border-slate-950 shadow cursor-grab active:cursor-grabbing hover:scale-110 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
               />
             ))}
 
           {/* Live Telemetry Overlay Strip (bottom inside frame with high-contrast scrim) */}
-          <div className="absolute inset-x-0 bottom-0 px-3.5 py-2.5 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex items-center justify-between gap-2 text-xs sm:text-sm font-mono font-semibold text-white pointer-events-none">
+          <div className="absolute inset-x-0 bottom-0 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex items-center justify-between gap-2 text-[10px] sm:text-sm font-mono font-semibold text-white pointer-events-none">
             <span>
               {telemetry
                 ? `${telemetry.resolution}px · ${telemetry.totalMs.toFixed(1)}ms · ${telemetry.actualFps.toFixed(0)} FPS`
@@ -451,177 +428,18 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           </div>
         </div>
 
-        {/* Dedicated Capture-for-Preview & UCI Best Move Action Bar Directly Under Camera Screen */}
-        <div className="mt-3.5 p-3.5 rounded-lg border border-cyan-400/45 bg-[#070B12]/70 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <button
-              type="button"
-              onClick={onScanBoardFen}
-              disabled={isScanningFen}
-              className="flex-1 min-w-[230px] inline-flex items-center justify-center gap-2 px-4 py-3 text-sm sm:text-base font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:pointer-events-none rounded-lg transition-colors shadow-sm"
-            >
-              {isScanningFen ? (
-                <Loader2 className="w-5 h-5 animate-spin shrink-0" />
-              ) : (
-                <Camera className="w-5 h-5 shrink-0" />
-              )}
-              <span>
-                {isScanningFen
-                  ? t.capturingPreviewBestMoveBtn
-                  : t.capturePreviewBestMoveBtn}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onToggleOpponentMoveOnly}
-              title={t.opponentMoveOnlyTooltip}
-              className={`inline-flex items-center gap-1.5 px-3 py-2.5 text-xs sm:text-sm font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
-                opponentMoveOnly
-                  ? 'border-emerald-400/65 bg-emerald-500/20 text-emerald-200'
-                  : 'border-slate-500/70 bg-slate-900/65 text-slate-100 hover:text-white'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>{t.opponentMoveOnlyBtn}</span>
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs sm:text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-slate-100 font-semibold">{t.yourZoneLabel}</span>
-              <div className="inline-flex rounded-md border border-slate-500/60 bg-[#05080E]/80 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => onChangeOrientation('white')}
-                  className={`px-3 py-1 rounded text-xs sm:text-sm font-bold transition-colors ${
-                    orientation === 'white'
-                      ? 'bg-white text-slate-950'
-                      : 'text-slate-200 hover:text-white'
-                  }`}
-                >
-                  {t.whiteSideBtn}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeOrientation('black')}
-                  className={`px-3 py-1 rounded text-xs sm:text-sm font-bold transition-colors ${
-                    orientation === 'black'
-                      ? 'bg-cyan-400 text-slate-950'
-                      : 'text-slate-200 hover:text-white'
-                  }`}
-                >
-                  {t.blackFlippedBtn}
-                </button>
-              </div>
-            </div>
-
-            <span className="text-slate-200 font-medium">
-              {orientation === 'black' ? t.blackPerspectiveHint : t.whitePerspectiveHint}
-            </span>
-          </div>
-
-          {/* Captured Preview & Extracted Best UCI Move Result */}
-          {capturedPreview && (
-            <div className="pt-3 border-t border-slate-600/60 flex flex-col sm:flex-row items-start gap-3.5">
-              <img
-                src={capturedPreview.imageUrl}
-                alt={t.capturedPreviewAlt}
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-lg object-cover border-2 border-cyan-400/60 shrink-0 bg-slate-950 shadow-md"
-              />
-              <div className="flex-1 min-w-0 w-full space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-sm sm:text-base font-bold text-cyan-200">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-300 shrink-0" />
-                    <span>{t.capturedPreviewTitle(capturedPreview.capturedAt)}</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={onClearCapturedPreview}
-                    aria-label={t.closePreviewAria}
-                    className="p-1.5 text-slate-200 hover:text-white hover:bg-slate-800 rounded-md"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="text-xs sm:text-sm text-slate-100 font-medium flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span>
-                    {capturedPreview.flippedForBlack
-                      ? t.previewBlackFlipped
-                      : t.previewWhiteBottom}
-                  </span>
-                  {capturedPreview.detectedOpponentMove && (
-                    <span
-                      className="text-amber-200 font-mono font-bold bg-amber-500/15 border border-amber-400/40 px-2 py-0.5 rounded"
-                      dir="ltr"
-                    >
-                      {t.opponentMoveLabel} {capturedPreview.detectedOpponentMove.san} (
-                      {capturedPreview.detectedOpponentMove.uci})
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2.5 pt-0.5">
-                  {isAnalyzingBestMove && !capturedPreview.bestMoveUci ? (
-                    <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-100">
-                      <Loader2 className="w-4 h-4 animate-spin text-cyan-300" />
-                      <span>{t.generatingUciReply}</span>
-                    </span>
-                  ) : capturedPreview.bestMoveUci ? (
-                    <>
-                      <div className="text-sm sm:text-base font-semibold text-white">
-                        {t.bestReplyUciLabel}{' '}
-                        <strong
-                          className="font-mono text-base sm:text-lg font-bold text-emerald-300"
-                          dir="ltr"
-                        >
-                          {capturedPreview.bestMoveSan ?? capturedPreview.bestMoveUci} (
-                          {capturedPreview.bestMoveUci})
-                        </strong>
-                        {capturedPreview.evaluationLabel && (
-                          <span
-                            className="ms-2 text-xs sm:text-sm font-mono font-semibold text-slate-200"
-                            dir="ltr"
-                          >
-                            [{capturedPreview.evaluationLabel}]
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          capturedPreview.bestMoveUci &&
-                          onApplyBestMoveFromPreview(capturedPreview.bestMoveUci)
-                        }
-                        className="px-3.5 py-1.5 text-xs sm:text-sm font-bold bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-md transition-colors shrink-0"
-                      >
-                        {t.applyMoveBtn}
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-xs sm:text-sm font-medium text-slate-200">
-                      {t.positionReadyLabel}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Virtual Source Interactive Controls (only shown when source === 'virtual') */}
         {source === 'virtual' && (
-          <div className="mt-3.5 pt-3.5 border-t border-slate-600/50 flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2">
-              <label htmlFor="preset-select" className="text-xs sm:text-sm font-semibold text-slate-100 whitespace-nowrap">
+          <div className="mt-2.5 sm:mt-3.5 pt-2.5 sm:pt-3.5 border-t border-slate-600/50 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <label htmlFor="preset-select" className="text-[11px] sm:text-sm font-semibold text-slate-100 whitespace-nowrap">
                 {t.virtualScenarioLabel}
               </label>
               <select
                 id="preset-select"
                 value={selectedPresetId}
                 onChange={(e) => onSelectPreset(e.target.value)}
-                className="bg-[#070B12] border border-slate-500/70 rounded-md px-3 py-2 text-xs sm:text-sm font-medium text-white focus:outline-none focus:border-cyan-400"
+                className="bg-[#070B12] border border-slate-500/70 rounded-md px-2 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm font-medium text-white focus:outline-none focus:border-cyan-400"
               >
                 {SAMPLE_GAMES.map((g) => (
                   <option key={g.id} value={g.id}>
@@ -631,11 +449,11 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
               </select>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={onToggleLightingNoise}
-                className={`px-3 py-2 text-xs sm:text-sm font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 ${
+                className={`px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 ${
                   simulateLightingNoise
                     ? 'border-amber-400/65 bg-amber-500/20 text-amber-200'
                     : 'border-slate-500/70 bg-slate-900/60 text-slate-100 hover:text-white'
@@ -647,7 +465,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
               <button
                 type="button"
                 onClick={onResetVirtualGame}
-                className="px-3 py-2 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/70 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/70 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 {t.resetStreamBtn}
               </button>
@@ -656,9 +474,9 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
                 type="button"
                 onClick={onStepVirtualMove}
                 disabled={presetStepIndex >= activePreset.moves.length}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 disabled:pointer-events-none text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-sm font-bold bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 disabled:pointer-events-none text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
-                <StepForward className="w-4 h-4" />
+                <StepForward className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span>
                   {t.stepVirtualMoveBtn(presetStepIndex, activePreset.moves.length)}
                 </span>

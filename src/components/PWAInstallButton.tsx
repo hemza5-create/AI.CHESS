@@ -38,9 +38,9 @@ export const PWAInstallButton: React.FC = () => {
       <button
         type="button"
         onClick={handleClick}
-        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-emerald-200 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/60 rounded-md transition-colors whitespace-nowrap shrink-0"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-sm font-bold text-emerald-200 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/60 rounded-md transition-colors whitespace-nowrap shrink-0"
       >
-        <Smartphone className="w-4 h-4" />
+        <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         <span>{t.pwaInstallButton}</span>
       </button>
 

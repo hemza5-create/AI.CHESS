@@ -93,15 +93,15 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
   return (
     <section className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
-        <div className="flex items-center gap-2">
-          <Gauge className="w-4 h-4 text-cyan-300" />
-          <h2 className="text-base font-bold text-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <Gauge className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300" />
+          <h2 className="text-sm sm:text-base font-bold text-white">
             {t.profilerTitle}
           </h2>
         </div>
 
-        <div className="flex items-center gap-3 text-xs sm:text-sm">
+        <div className="flex items-center gap-2 sm:gap-3 text-[11px] sm:text-sm">
           <span className={`font-semibold ${pressureTone}`}>● {pressureLabel}</span>
           <span className="text-slate-400" aria-hidden="true">
             ·
@@ -112,24 +112,24 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
         </div>
       </div>
 
-      <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="p-3 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* Left: Interactive Trade-off Controls */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className="lg:col-span-5 space-y-3 sm:space-y-4">
           {/* Scan Resolution Selector */}
           <div>
-            <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
+            <div className="flex items-center justify-between text-[11px] sm:text-sm mb-1.5 sm:mb-2">
               <span className="text-slate-100 font-semibold">{t.scanResolutionLabel}</span>
               <span className="font-mono font-bold text-cyan-200" dir="ltr">
                 {config.resolution}×{config.resolution} px
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#070B12]/65 rounded-lg border border-slate-500/50">
+            <div className="grid grid-cols-3 gap-1 sm:gap-1.5 p-1 bg-[#070B12]/65 rounded-lg border border-slate-500/50">
               {RESOLUTIONS.map((res) => (
                 <button
                   key={res}
                   type="button"
                   onClick={() => onChangeConfig({ resolution: res })}
-                  className={`py-2 text-xs sm:text-sm font-mono rounded-md transition-colors ${
+                  className={`py-1.5 sm:py-2 text-[11px] sm:text-sm font-mono rounded-md transition-colors ${
                     config.resolution === res
                       ? 'bg-cyan-400 text-slate-950 font-bold'
                       : 'text-slate-100 hover:text-white hover:bg-slate-800/75'
@@ -143,7 +143,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
           {/* Target FPS Slider (up to 60 FPS) */}
           <div>
-            <div className="flex items-center justify-between text-xs sm:text-sm mb-1.5">
+            <div className="flex items-center justify-between text-[11px] sm:text-sm mb-1.5">
               <label htmlFor="fps-slider" className="text-slate-100 font-semibold">
                 {t.targetFpsLabel}
               </label>
@@ -161,13 +161,13 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
               onChange={(e) => onChangeConfig({ targetFps: Number(e.target.value) })}
               className="w-full cursor-pointer"
             />
-            <div className="mt-2 grid grid-cols-4 gap-1.5" dir="ltr">
+            <div className="mt-1.5 sm:mt-2 grid grid-cols-4 gap-1 sm:gap-1.5" dir="ltr">
               {[15, 30, 45, 60].map((fpsPreset) => (
                 <button
                   key={fpsPreset}
                   type="button"
                   onClick={() => onChangeConfig({ targetFps: fpsPreset })}
-                  className={`py-1.5 text-xs font-mono font-semibold rounded border transition-colors ${
+                  className={`py-1 sm:py-1.5 text-[11px] sm:text-xs font-mono font-semibold rounded border transition-colors ${
                     config.targetFps === fpsPreset
                       ? 'bg-cyan-500/25 border-cyan-400/70 text-cyan-200 font-bold'
                       : 'bg-[#070B12]/65 border-slate-500/60 text-slate-100 hover:text-white'
@@ -287,13 +287,13 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
               className="w-full cursor-pointer"
             />
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 sm:gap-1.5">
               {t.eloPresets.map((preset) => (
                 <button
                   key={preset.elo}
                   type="button"
                   onClick={() => onChangePlayerElo(preset.elo)}
-                  className={`py-1.5 px-2 text-xs font-semibold rounded border transition-colors whitespace-nowrap ${
+                  className={`py-1 sm:py-1.5 px-1.5 sm:px-2 text-[11px] sm:text-xs font-semibold rounded border transition-colors whitespace-nowrap ${
                     Math.abs(playerElo - preset.elo) < 25
                       ? 'bg-cyan-500/25 border-cyan-400/70 text-cyan-200 font-bold'
                       : 'bg-[#070B12]/65 border-slate-500/60 text-slate-100 hover:text-white'
@@ -364,28 +364,28 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
           </div>
 
           {/* Pipeline stage timings */}
-          <div className="grid grid-cols-4 gap-2 text-center bg-[#070B12]/65 border border-slate-500/55 rounded-lg p-3">
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2 text-center bg-[#070B12]/65 border border-slate-500/55 rounded-lg p-2 sm:p-3">
             <div>
-              <div className="text-xs font-medium text-slate-200">{t.stageCapture}</div>
-              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
+              <div className="text-[10px] sm:text-xs font-medium text-slate-200">{t.stageCapture}</div>
+              <div className="text-xs sm:text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.captureMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium text-slate-200">{t.stageBlur}</div>
-              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
+              <div className="text-[10px] sm:text-xs font-medium text-slate-200">{t.stageBlur}</div>
+              <div className="text-xs sm:text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.blurMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium text-slate-200">{t.stageCanny}</div>
-              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
+              <div className="text-[10px] sm:text-xs font-medium text-slate-200">{t.stageCanny}</div>
+              <div className="text-xs sm:text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.cannyMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
             <div>
-              <div className="text-xs font-medium text-slate-200">{t.stageMatrix}</div>
-              <div className="text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
+              <div className="text-[10px] sm:text-xs font-medium text-slate-200">{t.stageMatrix}</div>
+              <div className="text-xs sm:text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
                 {telemetry ? `${telemetry.matrixMs.toFixed(1)}ms` : '—'}
               </div>
             </div>
@@ -394,17 +394,17 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
         {/* Right: Live 8x8 Extracted Matrix Snapshot */}
         <div className="lg:col-span-3 flex flex-col">
-          <div className="flex items-center justify-between text-xs sm:text-sm mb-2">
+          <div className="flex items-center justify-between text-[11px] sm:text-sm mb-2">
             <span className="inline-flex items-center gap-1.5 text-slate-100 font-semibold">
-              <Grid3X3 className="w-4 h-4 text-cyan-300" />
+              <Grid3X3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300" />
               <span>{t.matrixDiffTitle}</span>
             </span>
-            <span className="text-xs font-mono font-semibold text-slate-200">Δ Luma</span>
+            <span className="text-[11px] sm:text-xs font-mono font-semibold text-slate-200">Δ Luma</span>
           </div>
 
           <div
             dir="ltr"
-            className="grid grid-cols-8 gap-0.5 p-1.5 bg-[#070B12]/65 border border-slate-500/55 rounded-lg aspect-square max-w-[220px] mx-auto w-full"
+            className="grid grid-cols-8 gap-0.5 p-1 sm:p-1.5 bg-[#070B12]/65 border border-slate-500/55 rounded-lg aspect-square max-w-[176px] sm:max-w-[220px] mx-auto w-full"
           >
             {squareMetrics
               ? squareMetrics.flat().map((sq) => {
@@ -419,7 +419,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                           ? `rgba(16, 185, 129, ${(0.3 + norm * 0.55).toFixed(2)})`
                           : `rgba(6, 182, 212, ${(norm * 0.35).toFixed(2)})`,
                       }}
-                      className="flex items-center justify-center rounded-[2px] border border-slate-600/60 text-[10px] font-mono font-bold text-white tabular-nums"
+                      className="flex items-center justify-center rounded-[2px] border border-slate-600/60 text-[8px] sm:text-[10px] font-mono font-bold text-white tabular-nums"
                     >
                       {sq.delta >= 1 ? sq.delta.toFixed(0) : ''}
                     </div>

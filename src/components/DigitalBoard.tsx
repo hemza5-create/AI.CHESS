@@ -195,9 +195,9 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
   return (
     <section className="flex flex-col border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
       {/* Header strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h2 className="text-base font-bold text-white whitespace-nowrap">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
+          <h2 className="text-sm sm:text-base font-bold text-white whitespace-nowrap">
             {t.syncBoardTitle}
           </h2>
           <span className="text-slate-400" aria-hidden="true">
@@ -207,41 +207,41 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
             type="button"
             onClick={onToggleTurn}
             title={t.toggleTurnTooltip}
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-cyan-200 hover:text-white truncate rounded-md px-2.5 py-1 bg-cyan-500/20 border border-cyan-400/50 transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] sm:text-sm font-semibold text-cyan-200 hover:text-white truncate rounded-md px-2 py-1 sm:px-2.5 bg-cyan-500/20 border border-cyan-400/50 transition-colors"
           >
-            <RefreshCw className="w-3.5 h-3.5 shrink-0" />
+            <RefreshCw className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
             <span>
               {t.turnPrefix} {turn === 'w' ? t.whiteName : t.blackName}
             </span>
           </button>
           {analysis && (
-            <span className="text-sm font-mono font-bold text-slate-100 truncate" dir="ltr">
+            <span className="text-xs sm:text-sm font-mono font-bold text-slate-100 truncate" dir="ltr">
               {analysis.evaluationLabel}
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => setShowBestArrow((v) => !v)}
             title={t.arrowTooltip}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            className={`inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
               showBestArrow
                 ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60'
                 : 'text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60'
             }`}
           >
-            <Navigation className="w-4 h-4" />
+            <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.arrowBtn}</span>
           </button>
           <button
             type="button"
             onClick={onFlipOrientation}
             title={t.flipTooltip}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <ArrowUpDown className="w-4 h-4" />
+            <ArrowUpDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.flipBtn}</span>
           </button>
           <button
@@ -249,28 +249,28 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
             onClick={onUndoMove}
             disabled={!canUndo}
             title={t.undoTooltip}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <Undo2 className="w-4 h-4" />
+            <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.undoBtn}</span>
           </button>
           <button
             type="button"
             onClick={onResetBoard}
             title={t.resetTooltip}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.resetBtn}</span>
           </button>
         </div>
       </div>
 
       {/* Board + Evaluation Bar (LTR container so chess coordinates stay standard) */}
-      <div className="p-4 flex items-stretch gap-3" dir="ltr">
+      <div className="p-2.5 sm:p-4 flex items-stretch justify-center gap-2 sm:gap-3" dir="ltr">
         {/* Stockfish Evaluation Bar */}
         <div
-          className="w-8 rounded-md bg-slate-950/65 border border-slate-500/60 relative overflow-hidden flex flex-col justify-between shrink-0"
+          className="w-5 sm:w-8 rounded-md bg-slate-950/65 border border-slate-500/60 relative overflow-hidden flex flex-col justify-between shrink-0"
           aria-label={t.evalBarAria(analysis?.evaluationLabel ?? '0.00')}
         >
           <div
@@ -280,16 +280,16 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
               transform: `scaleY(${whiteBarPct / 100})`,
             }}
           />
-          <span className="relative z-10 text-[11px] font-mono font-bold text-center pt-1 text-slate-100 mix-blend-difference">
+          <span className="relative z-10 text-[9px] sm:text-[11px] font-mono font-bold text-center pt-1 text-slate-100 mix-blend-difference">
             {analysis && analysis.scoreValue < 0 ? analysis.evaluationLabel : ''}
           </span>
-          <span className="relative z-10 text-[11px] font-mono font-bold text-center pb-1 text-slate-100 mix-blend-difference">
+          <span className="relative z-10 text-[9px] sm:text-[11px] font-mono font-bold text-center pb-1 text-slate-100 mix-blend-difference">
             {analysis && analysis.scoreValue >= 0 ? analysis.evaluationLabel : '0.0'}
           </span>
         </div>
 
         {/* 8x8 Chessboard */}
-        <div className="relative flex-1 aspect-square max-w-[520px] mx-auto border border-slate-700 rounded-md overflow-hidden select-none">
+        <div className="relative flex-1 aspect-square max-w-[310px] sm:max-w-[520px] border border-slate-700 rounded-md overflow-hidden select-none">
           <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
             {Array.from({ length: 64 }).map((_, idx) => {
               const r = Math.floor(idx / 8);
@@ -334,7 +334,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                   {/* Rank label on left edge */}
                   {c === 0 && (
                     <span
-                      className={`absolute top-0.5 left-1 text-[11px] font-mono font-bold leading-none drop-shadow ${
+                      className={`absolute top-0.5 left-0.5 sm:left-1 text-[9px] sm:text-[11px] font-mono font-bold leading-none drop-shadow ${
                         isLight ? 'text-[#1F4724]' : 'text-white'
                       }`}
                     >
@@ -344,7 +344,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                   {/* File label on bottom edge */}
                   {r === 7 && (
                     <span
-                      className={`absolute bottom-0.5 right-1 text-[11px] font-mono font-bold leading-none drop-shadow ${
+                      className={`absolute bottom-0.5 right-0.5 sm:right-1 text-[9px] sm:text-[11px] font-mono font-bold leading-none drop-shadow ${
                         isLight ? 'text-[#1F4724]' : 'text-white'
                       }`}
                     >
@@ -452,15 +452,15 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
       </div>
 
       {/* Footer Recommendation & FEN bar */}
-      <div className="px-4 py-3 border-t border-slate-500/45 bg-[#0A0F1A]/60 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-xs sm:text-sm font-medium text-slate-100 whitespace-nowrap shrink-0">
+      <div className="px-3 sm:px-4 py-2 sm:py-3 border-t border-slate-500/45 bg-[#0A0F1A]/60 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+          <span className="text-[11px] sm:text-sm font-medium text-slate-100 whitespace-nowrap shrink-0">
             {isAnalyzing ? (
               t.analyzingStockfish
             ) : analysis?.bestMoveSan ? (
               <>
                 {t.stockfishRecommendation}{' '}
-                <strong className="font-mono text-sm sm:text-base font-bold text-emerald-300" dir="ltr">
+                <strong className="font-mono text-xs sm:text-base font-bold text-emerald-300" dir="ltr">
                   {analysis.bestMoveSan} ({analysis.bestMove})
                 </strong>
               </>
@@ -468,10 +468,10 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
               t.activeFenMatrix
             )}
           </span>
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <code
               dir="ltr"
-              className="text-xs sm:text-sm font-mono font-medium text-slate-100 truncate select-all"
+              className="text-[11px] sm:text-sm font-mono font-medium text-slate-100 truncate select-all"
               title={fen}
             >
               {fen}
@@ -480,9 +480,9 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
               type="button"
               onClick={() => setEditingFen((v) => !v)}
               title={t.editFenTooltip}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs sm:text-sm font-semibold text-white bg-slate-900/75 hover:bg-slate-800 border border-slate-600/70 rounded transition-colors shrink-0"
+              className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/75 hover:bg-slate-800 border border-slate-600/70 rounded transition-colors shrink-0"
             >
-              <Edit3 className="w-3.5 h-3.5 text-cyan-300" />
+              <Edit3 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-300" />
               <span>FEN</span>
             </button>
           </div>
