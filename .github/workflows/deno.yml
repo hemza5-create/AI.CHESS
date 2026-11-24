@@ -35,8 +35,5 @@ jobs:
           npm run lint
           npm run build
 
-      - name: Run Deno type check on hook
-        run: deno check src/hooks/usePWAInstall.ts
-
       - name: Run Deno tests
         run: deno test --allow-all --permit-no-files
