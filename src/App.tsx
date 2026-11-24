@@ -11,16 +11,26 @@ import { LanguageSwitcher } from './components/LanguageSwitcher.tsx';
 import { saveStoredLanguage, useLanguage } from './i18n/LanguageContext.tsx';
 import type { TranslationDictionary } from './i18n/translations.ts';
 import { OpenCvChessPipeline, computeFitRoi } from './vision/opencvPipeline.ts';
-import { analyzeBoardMatrixPerspective, type BoardMatrix8x8 } from './vision/boardMatrix.ts';
+import {
+  analyzeBoardMatrixPerspective,
+  rowsToBoardMatrix,
+  type BoardMatrix8x8,
+} from './vision/boardMatrix.ts';
 import { renderVirtualBoardToCanvas, SAMPLE_GAMES } from './vision/virtualBoardRenderer.ts';
 import { playMoveTapSound, unlockAudioContext } from './utils/soundEffects.ts';
-import { localStockfishEngine } from './engine/localStockfishEngine.ts';
+import {
+  localStockfishEngine,
+  type LocalEngineVerificationResult,
+} from './engine/localStockfishEngine.ts';
 import {
   buildApiUrl,
   checkRemoteServerHealth,
   getStoredExternalServerUrl,
+  getStoredVisionApiUrl,
   isCapacitorNativeRuntime,
+  resolveVisionSnapshotUrl,
   saveExternalServerUrl,
+  saveVisionApiUrl,
   useOnlineStatus,
   type ActiveEngineSource,
   type RemoteServerStatus,
@@ -129,13 +139,15 @@ export default function App() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [uploadedImageTick, setUploadedImageTick] = useState<number>(0);
   const [isScanningFen, setIsScanningFen] = useState<boolean>(false);
+  const isScanningFenRef = useRef<boolean>(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [autoScanPieces, setAutoScanPieces] = useState<boolean>(false);
   const [opponentMoveOnly, setOpponentMoveOnly] = useState<boolean>(false);
   const [capturedPreview, setCapturedPreview] = useState<CapturedBoardPreview | null>(null);
   const [isClearingCache, setIsClearingCache] = useState<boolean>(false);
   const [cacheNotice, setCacheNotice] = useState<string | null>(null);
 
-  // Stockfish UCI State (Elo-driven automatic Search Depth)
+  // Stockfish UCI State (Elo-driven automatic Search Depth — Always Runs Locally)
   const [playerElo, setPlayerElo] = useState<number>(1600);
   const [autoDepthByElo, setAutoDepthByElo] = useState<boolean>(true);
   const [manualSearchDepth, setManualSearchDepth] = useState<number>(13);
@@ -145,20 +157,23 @@ export default function App() {
   const [analysis, setAnalysis] = useState<StockfishAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const analyzeAbortRef = useRef<AbortController | null>(null);
+  const analyzeSeqRef = useRef<number>(0);
 
   const isOnline = useOnlineStatus();
   const [externalServerUrl, setExternalServerUrl] = useState<string>(() =>
     getStoredExternalServerUrl()
+  );
+  const [visionApiUrl, setVisionApiUrl] = useState<string>(() =>
+    getStoredVisionApiUrl()
   );
   const [remoteServerStatus, setRemoteServerStatus] = useState<RemoteServerStatus>(() => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
     return buildApiUrl('/api/stockfish/health') ? 'checking' : 'unconfigured';
   });
   const [activeEngineSource, setActiveEngineSource] = useState<ActiveEngineSource>('local-wasm');
-  const activeEngineSourceRef = useRef<ActiveEngineSource>('local-wasm');
-  const fenRef = useRef<string>(chessRef.current.fen());
-  fenRef.current = fen;
+  const [localEngineVerify, setLocalEngineVerify] =
+    useState<LocalEngineVerificationResult | null>(null);
+  const [isVerifyingEngine, setIsVerifyingEngine] = useState<boolean>(false);
 
   // Gemini Explanation & TTS State (on-demand toggle)
   const [voiceCoachEnabled, setVoiceCoachEnabled] = useState<boolean>(false);
@@ -283,24 +298,20 @@ export default function App() {
     [externalServerUrl, isOnline, language, selectedVoice, playAudioUrl, playerElo, t]
   );
 
-  // Run Stockfish 19 UCI analysis (automatic external server when online & reachable, seamless local WebAssembly offline fallback)
+  // Run Stockfish 19 UCI analysis strictly locally via WebAssembly (or JS fallback)
   const runStockfishAnalysis = useCallback(
     async (
       targetFen: string,
       depth: number,
       moveCtxForSpeech: { san: string; uci: string } | null
     ): Promise<StockfishAnalysisResult | null> => {
-      if (analyzeAbortRef.current) {
-        analyzeAbortRef.current.abort();
-      }
-      const controller = new AbortController();
-      analyzeAbortRef.current = controller;
+      const seqId = ++analyzeSeqRef.current;
 
       setIsAnalyzing(true);
       setAnalysisError(null);
 
-      const runLocalWasm = async (): Promise<StockfishAnalysisResult> => {
-        const res = await localStockfishEngine.analyze(
+      try {
+        const typed = await localStockfishEngine.analyze(
           targetFen,
           depth,
           3,
@@ -309,66 +320,9 @@ export default function App() {
         );
         const backend: ActiveEngineSource =
           localStockfishEngine.getActiveBackend() === 'asm' ? 'local-asm' : 'local-wasm';
-        activeEngineSourceRef.current = backend;
         setActiveEngineSource(backend);
-        return res;
-      };
 
-      try {
-        let typed: StockfishAnalysisResult;
-        const analyzeUrl = buildApiUrl('/api/stockfish/analyze', externalServerUrl);
-
-        const shouldTryRemote =
-          isOnline &&
-          Boolean(analyzeUrl) &&
-          remoteServerStatus !== 'offline' &&
-          remoteServerStatus !== 'unconfigured';
-
-        if (!shouldTryRemote || !analyzeUrl) {
-          typed = await runLocalWasm();
-        } else {
-          const timeoutId = globalThis.setTimeout(() => controller.abort(), 6000);
-          try {
-            const res = await fetch(analyzeUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                fen: targetFen,
-                depth,
-                multiPv: 3,
-                playerElo,
-                autoDepthByElo,
-              }),
-              signal: controller.signal,
-            });
-            globalThis.clearTimeout(timeoutId);
-            const contentType = res.headers.get('content-type') ?? '';
-            if (!res.ok || !contentType.includes('application/json')) {
-              throw new Error('BACKEND_UNAVAILABLE');
-            }
-            typed = await parseJsonResponse<StockfishAnalysisResult>(
-              res,
-              t.stockfishAnalyzeFailed,
-              t
-            );
-            activeEngineSourceRef.current = 'remote';
-            setActiveEngineSource('remote');
-            setRemoteServerStatus('connected');
-          } catch (backendErr) {
-            globalThis.clearTimeout(timeoutId);
-            // If aborted by a newer analysis call (not our timeout), rethrow
-            if (analyzeAbortRef.current !== controller) {
-              throw backendErr;
-            }
-            // Fallback immediately to local WebAssembly Stockfish without permanently disabling future server reconnects
-            setRemoteServerStatus(
-              typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'unreachable'
-            );
-            typed = await runLocalWasm();
-          }
-        }
-
-        if (analyzeAbortRef.current !== controller) return null;
+        if (analyzeSeqRef.current !== seqId) return null;
         setAnalysis(typed);
 
         // Update latest move evaluation label in history
@@ -387,44 +341,46 @@ export default function App() {
         }
         return typed;
       } catch (err) {
-        if ((err as Error).name === 'AbortError' && analyzeAbortRef.current !== controller) {
+        if (analyzeSeqRef.current !== seqId) {
           return null;
         }
         setAnalysisError(err instanceof Error ? err.message : t.stockfishStartFailed);
         autoSpeakPendingRef.current = false;
         return null;
       } finally {
-        if (analyzeAbortRef.current === controller) {
+        if (analyzeSeqRef.current === seqId) {
           setIsAnalyzing(false);
         }
       }
     },
-    [autoDepthByElo, externalServerUrl, isOnline, playerElo, remoteServerStatus, t, triggerExplainAndSpeak]
+    [autoDepthByElo, playerElo, t.stockfishStartFailed, triggerExplainAndSpeak]
   );
 
-  // Preload local WebAssembly Stockfish on mount so offline mode works instantaneously
-  useEffect(() => {
-    void localStockfishEngine.warmup().then((backend) => {
-      if (backend && activeEngineSourceRef.current !== 'remote') {
-        const src: ActiveEngineSource = backend === 'asm' ? 'local-asm' : 'local-wasm';
-        activeEngineSourceRef.current = src;
-        setActiveEngineSource(src);
+  const handleVerifyLocalEngine = useCallback(async () => {
+    setIsVerifyingEngine(true);
+    try {
+      const result = await localStockfishEngine.verifyLocalEngine(meta.locale);
+      setLocalEngineVerify(result);
+      if (result.backend) {
+        setActiveEngineSource(result.backend === 'asm' ? 'local-asm' : 'local-wasm');
       }
-    });
-  }, []);
+      return result;
+    } finally {
+      setIsVerifyingEngine(false);
+    }
+  }, [meta.locale]);
 
-  // Automatically probe external/remote Stockfish server whenever network returns or URL changes
+  // Preload & verify local WebAssembly Stockfish on mount so offline/local UCI works instantaneously
+  useEffect(() => {
+    void handleVerifyLocalEngine();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Probe external server for Vision Snapshot API & AI Voice Coach availability (Stockfish stays local)
   const probeAndAutoConnectServer = useCallback(
     async (urlOverride?: string) => {
       const targetUrl = urlOverride ?? externalServerUrl;
       if (!isOnline) {
         setRemoteServerStatus('offline');
-        if (activeEngineSourceRef.current === 'remote') {
-          const localSrc: ActiveEngineSource =
-            localStockfishEngine.getActiveBackend() === 'asm' ? 'local-asm' : 'local-wasm';
-          activeEngineSourceRef.current = localSrc;
-          setActiveEngineSource(localSrc);
-        }
         return;
       }
 
@@ -436,20 +392,15 @@ export default function App() {
       setRemoteServerStatus('checking');
       const health = await checkRemoteServerHealth(targetUrl);
       setRemoteServerStatus(health.status);
-      if (health.reachable && activeEngineSourceRef.current !== 'remote') {
-        activeEngineSourceRef.current = 'remote';
-        setActiveEngineSource('remote');
-        void runStockfishAnalysis(fenRef.current, searchDepth, null);
-      }
     },
-    [externalServerUrl, isOnline, runStockfishAnalysis, searchDepth]
+    [externalServerUrl, isOnline]
   );
 
   useEffect(() => {
     void probeAndAutoConnectServer();
   }, [isOnline, externalServerUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Periodic background check when online but currently using local WASM fallback so external server reconnects automatically
+  // Periodic background check for external API server when online
   useEffect(() => {
     if (!isOnline || remoteServerStatus !== 'unreachable') return;
     const intervalId = globalThis.setInterval(() => {
@@ -466,6 +417,12 @@ export default function App() {
     },
     [probeAndAutoConnectServer]
   );
+
+  const handleSaveVisionApiUrl = useCallback((nextRawUrl: string) => {
+    const saved = saveVisionApiUrl(nextRawUrl);
+    setVisionApiUrl(saved);
+    setScanError(null);
+  }, []);
 
   // Initial Stockfish analysis & re-run on depth / Elo change (debounced slightly for smooth slider dragging)
   useEffect(() => {
@@ -872,170 +829,243 @@ export default function App() {
     applyCustomFen(parts.join(' '));
   }, [applyCustomFen]);
 
-  const handleScanBoardFen = useCallback(async () => {
-    unlockAudioContext();
-    setScanError(null);
-    const pipeline = pipelineRef.current;
-    if (!pipeline) return;
+  const resolvedVisionEndpoint = resolveVisionSnapshotUrl(visionApiUrl, externalServerUrl);
 
-    let srcElem: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement | null = null;
-    let srcW = 0;
-    let srcH = 0;
-
-    if (source === 'virtual') {
-      const vCanvas = virtualCanvasRef.current;
-      if (vCanvas) {
-        srcElem = vCanvas;
-        srcW = vCanvas.width;
-        srcH = vCanvas.height;
+  const handleScanBoardFen = useCallback(
+    async (isAuto = false) => {
+      if (isScanningFenRef.current) return;
+      if (!isAuto) {
+        unlockAudioContext();
       }
-    } else if (source === 'camera') {
-      const vid = videoRef.current;
-      if (vid && vid.readyState >= 2 && vid.videoWidth > 0) {
-        srcElem = vid;
-        srcW = vid.videoWidth;
-        srcH = vid.videoHeight;
-      }
-    } else if (source === 'image') {
-      const img = uploadedImgRef.current;
-      if (img && img.complete && img.naturalWidth > 0) {
-        srcElem = img;
-        srcW = img.naturalWidth;
-        srcH = img.naturalHeight;
-      }
-    }
+      setScanError(null);
+      const pipeline = pipelineRef.current;
+      if (!pipeline) return;
 
-    if (!srcElem || srcW === 0 || srcH === 0) {
-      setScanError(t.noActiveFrameError);
-      return;
-    }
+      let srcElem: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement | null = null;
+      let srcW = 0;
+      let srcH = 0;
 
-    // Capture raw screen-space ROI (bottom half = player area; Black flip happens programmatically on the 8x8 matrix)
-    const dataUrl = pipeline.captureRoiDataUrl(srcElem, srcW, srcH, roi, config.orientation, 640, true);
-    if (!dataUrl) {
-      setScanError(t.roiCaptureError);
-      return;
-    }
-
-    const capturedAt = new Date().toLocaleTimeString(meta.locale, {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-
-    setCapturedPreview({
-      imageUrl: dataUrl,
-      capturedAt,
-      orientation: config.orientation,
-      flippedForBlack: config.orientation === 'black',
-      detectedOpponentMove: null,
-      bestMoveSan: null,
-      bestMoveUci: null,
-      evaluationLabel: null,
-      fen: chessRef.current.fen(),
-    });
-
-    const boardFenUrl = buildApiUrl('/api/gemini/board-fen', externalServerUrl);
-    if (!isOnline || !boardFenUrl) {
-      setScanError(t.aiScanCloudRequired);
-      return;
-    }
-
-    setIsScanningFen(true);
-    try {
-      const res = await fetch(boardFenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: dataUrl,
-          mimeType: 'image/jpeg',
-          playerColor: config.orientation,
-        }),
-      });
-      const data = await parseJsonResponse<{
-        fen: string;
-        turn?: 'w' | 'b';
-        screenMatrix?: BoardMatrix8x8;
-        flippedForBlack?: boolean;
-      }>(res, t.aiScanReadFailed, t);
-
-      let resolvedFen = data.fen;
-      let resolvedTurn: 'w' | 'b' = data.turn === 'b' ? 'b' : 'w';
-      let flippedForBlack = config.orientation === 'black';
-      let detectedOpponentMove: { san: string; uci: string } | null = null;
-
-      if (Array.isArray(data.screenMatrix) && data.screenMatrix.length === 8) {
-        const matrixResult = analyzeBoardMatrixPerspective(
-          data.screenMatrix,
-          config.orientation,
-          chessRef.current.fen()
-        );
-        resolvedFen = matrixResult.fen;
-        resolvedTurn = matrixResult.turn;
-        flippedForBlack = matrixResult.flippedForBlack;
-        if (matrixResult.detectedOpponentMove) {
-          detectedOpponentMove = {
-            san: matrixResult.detectedOpponentMove.san,
-            uci: matrixResult.detectedOpponentMove.uci,
-          };
+      if (source === 'virtual') {
+        const vCanvas = virtualCanvasRef.current;
+        if (vCanvas) {
+          srcElem = vCanvas;
+          srcW = vCanvas.width;
+          srcH = vCanvas.height;
+        }
+      } else if (source === 'camera') {
+        const vid = videoRef.current;
+        if (vid && vid.readyState >= 2 && vid.videoWidth > 0) {
+          srcElem = vid;
+          srcW = vid.videoWidth;
+          srcH = vid.videoHeight;
+        }
+      } else if (source === 'image') {
+        const img = uploadedImgRef.current;
+        if (img && img.complete && img.naturalWidth > 0) {
+          srcElem = img;
+          srcW = img.naturalWidth;
+          srcH = img.naturalHeight;
         }
       }
 
-      const applied = applyCustomFen(resolvedFen, true);
-      if (!applied) {
-        throw new Error(t.illegalBoardPosition);
+      if (!srcElem || srcW === 0 || srcH === 0) {
+        if (!isAuto) setScanError(t.noActiveFrameError);
+        return;
       }
 
-      if (moveSoundEnabled) {
-        playMoveTapSound(false);
+      // Capture raw screen-space ROI (bottom half = player area; Black flip happens programmatically on the 8x8 matrix)
+      const dataUrl = pipeline.captureRoiDataUrl(srcElem, srcW, srcH, roi, config.orientation, 640, true);
+      if (!dataUrl) {
+        if (!isAuto) setScanError(t.roiCaptureError);
+        return;
       }
 
-      const perspectiveLabel = flippedForBlack ? t.perspectiveBlackFlipped : t.perspectiveWhiteBottom;
-      setLastDetectedInfo(
-        t.scanReadSummary(
-          perspectiveLabel,
-          detectedOpponentMove?.san ?? null,
-          resolvedTurn === 'b' ? t.blackName : t.whiteName
-        )
-      );
-
-      // Immediately resolve Stockfish UCI best reply for the preview card
-      const uciResult = await runStockfishAnalysis(
-        resolvedFen,
-        searchDepth,
-        detectedOpponentMove
-      );
-
-      setCapturedPreview({
-        imageUrl: dataUrl,
-        capturedAt,
-        orientation: config.orientation,
-        flippedForBlack,
-        detectedOpponentMove,
-        bestMoveSan: uciResult?.bestMoveSan ?? null,
-        bestMoveUci: uciResult?.bestMove ?? null,
-        evaluationLabel: uciResult?.evaluationLabel ?? null,
-        fen: resolvedFen,
+      const capturedAt = new Date().toLocaleTimeString(meta.locale, {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
       });
-    } catch (err) {
-      setScanError(err instanceof Error ? err.message : t.aiScanGenericFailed);
-    } finally {
-      setIsScanningFen(false);
+
+      if (!isAuto) {
+        setCapturedPreview({
+          imageUrl: dataUrl,
+          capturedAt,
+          orientation: config.orientation,
+          flippedForBlack: config.orientation === 'black',
+          detectedOpponentMove: null,
+          bestMoveSan: null,
+          bestMoveUci: null,
+          evaluationLabel: null,
+          fen: chessRef.current.fen(),
+        });
+      }
+
+      const boardFenUrl = resolveVisionSnapshotUrl(visionApiUrl, externalServerUrl);
+      if (!isOnline || !boardFenUrl) {
+        setScanError(t.aiScanCloudRequired);
+        return;
+      }
+
+      isScanningFenRef.current = true;
+      setIsScanningFen(true);
+      try {
+        const res = await fetch(boardFenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: dataUrl,
+            mimeType: 'image/jpeg',
+            playerColor: config.orientation,
+            currentFen: chessRef.current.fen(),
+          }),
+        });
+        const data = await parseJsonResponse<{
+          fen?: string;
+          boardFen?: string;
+          ranks?: string[];
+          turn?: 'w' | 'b';
+          screenMatrix?: BoardMatrix8x8;
+          boardMatrix?: BoardMatrix8x8;
+          flippedForBlack?: boolean;
+        }>(res, t.aiScanReadFailed, t);
+
+        let resolvedFen = (data.fen ?? data.boardFen ?? '').trim();
+        let resolvedTurn: 'w' | 'b' =
+          data.turn === 'b' ? 'b' : data.turn === 'w' ? 'w' : config.orientation === 'black' ? 'b' : 'w';
+        let flippedForBlack = config.orientation === 'black';
+        let detectedOpponentMove: { san: string; uci: string } | null = null;
+
+        let candidateMatrix: BoardMatrix8x8 | null = null;
+        if (Array.isArray(data.screenMatrix) && data.screenMatrix.length === 8) {
+          candidateMatrix = data.screenMatrix;
+        } else if (Array.isArray(data.boardMatrix) && data.boardMatrix.length === 8) {
+          candidateMatrix = data.boardMatrix;
+        } else if (Array.isArray(data.ranks) && data.ranks.length === 8) {
+          candidateMatrix = rowsToBoardMatrix(data.ranks);
+        }
+
+        if (candidateMatrix) {
+          const matrixResult = analyzeBoardMatrixPerspective(
+            candidateMatrix,
+            config.orientation,
+            chessRef.current.fen()
+          );
+          resolvedFen = matrixResult.fen;
+          resolvedTurn = matrixResult.turn;
+          flippedForBlack = matrixResult.flippedForBlack;
+          if (matrixResult.detectedOpponentMove) {
+            detectedOpponentMove = {
+              san: matrixResult.detectedOpponentMove.san,
+              uci: matrixResult.detectedOpponentMove.uci,
+            };
+          }
+        } else if (resolvedFen) {
+          // Support external endpoints returning piece-placement only (1 field) or partial FEN
+          const fenFields = resolvedFen.split(/\s+/);
+          if (fenFields.length === 1) {
+            resolvedFen = `${fenFields[0]} ${resolvedTurn} - - 0 1`;
+          } else if (fenFields.length < 4) {
+            resolvedFen = `${fenFields[0]} ${fenFields[1] ?? resolvedTurn} ${fenFields[2] ?? '-'} - 0 1`;
+          }
+        }
+
+        if (!resolvedFen) {
+          throw new Error(t.aiScanReadFailed);
+        }
+
+        // Normalize via chess.js to validate and compare placement
+        let canonicalFen: string;
+        try {
+          canonicalFen = new Chess(resolvedFen).fen();
+        } catch {
+          throw new Error(t.illegalBoardPosition);
+        }
+
+        const nextPlacement = canonicalFen.split(' ')[0];
+        const currentPlacement = chessRef.current.fen().split(' ')[0];
+        const placementChanged = nextPlacement !== currentPlacement;
+
+        if (isAuto && !placementChanged) {
+          return;
+        }
+
+        const applied = applyCustomFen(canonicalFen, true);
+        if (!applied) {
+          throw new Error(t.illegalBoardPosition);
+        }
+
+        if (moveSoundEnabled) {
+          playMoveTapSound(false);
+        }
+
+        const perspectiveLabel = flippedForBlack ? t.perspectiveBlackFlipped : t.perspectiveWhiteBottom;
+        setLastDetectedInfo(
+          t.scanReadSummary(
+            perspectiveLabel,
+            detectedOpponentMove?.san ?? null,
+            resolvedTurn === 'b' ? t.blackName : t.whiteName
+          )
+        );
+
+        // Immediately run LOCAL Stockfish WebAssembly UCI analysis for the newly placed position
+        const uciResult = await runStockfishAnalysis(
+          canonicalFen,
+          searchDepth,
+          detectedOpponentMove
+        );
+
+        setCapturedPreview({
+          imageUrl: dataUrl,
+          capturedAt,
+          orientation: config.orientation,
+          flippedForBlack,
+          detectedOpponentMove,
+          bestMoveSan: uciResult?.bestMoveSan ?? null,
+          bestMoveUci: uciResult?.bestMove ?? null,
+          evaluationLabel: uciResult?.evaluationLabel ?? null,
+          fen: canonicalFen,
+        });
+      } catch (err) {
+        if (!isAuto) {
+          setScanError(err instanceof Error ? err.message : t.aiScanGenericFailed);
+        }
+      } finally {
+        isScanningFenRef.current = false;
+        setIsScanningFen(false);
+      }
+    },
+    [
+      applyCustomFen,
+      config.orientation,
+      externalServerUrl,
+      isOnline,
+      meta.locale,
+      moveSoundEnabled,
+      roi,
+      runStockfishAnalysis,
+      searchDepth,
+      source,
+      t,
+      visionApiUrl,
+    ]
+  );
+
+  // Automatic external API snapshot scanning & piece placement loop
+  useEffect(() => {
+    if (!autoScanPieces || !isOnline || !resolvedVisionEndpoint) return;
+    if (source === 'image') {
+      void handleScanBoardFen(true);
+      return;
     }
-  }, [
-    applyCustomFen,
-    config.orientation,
-    externalServerUrl,
-    isOnline,
-    meta.locale,
-    moveSoundEnabled,
-    roi,
-    runStockfishAnalysis,
-    searchDepth,
-    source,
-    t,
-  ]);
+    if (!isStreaming) return;
+
+    void handleScanBoardFen(true);
+    const intervalId = globalThis.setInterval(() => {
+      void handleScanBoardFen(true);
+    }, 4500);
+    return () => globalThis.clearInterval(intervalId);
+  }, [autoScanPieces, isOnline, isStreaming, resolvedVisionEndpoint, source, handleScanBoardFen]);
 
   // Re-process static uploaded image only when image, ROI, config, or viewMode changes
   useEffect(() => {
@@ -1132,6 +1162,9 @@ export default function App() {
         if (externalServerUrl) {
           saveExternalServerUrl(externalServerUrl);
         }
+        if (visionApiUrl) {
+          saveVisionApiUrl(visionApiUrl);
+        }
       } catch {
         // ignore restricted storage contexts
       }
@@ -1153,6 +1186,7 @@ export default function App() {
       // Reset in-memory vision buffers, cached Stockfish WASM worker & transient previews
       pipelineRef.current?.resetBaseline();
       localStockfishEngine.clearCache();
+      setLocalEngineVerify(null);
       setTelemetryHistory([]);
       setCapturedPreview(null);
       setAudioDataUrl(null);
@@ -1164,6 +1198,7 @@ export default function App() {
       setCacheNotice(
         clearedCount > 0 ? t.cacheClearedCount(clearedCount) : t.cacheClearedSuccess
       );
+      void handleVerifyLocalEngine();
       void runStockfishAnalysis(chessRef.current.fen(), searchDepth, null);
     } catch {
       setCacheNotice(t.cacheClearedSuccess);
@@ -1173,7 +1208,16 @@ export default function App() {
         setCacheNotice(null);
       }, 4000);
     }
-  }, [externalServerUrl, language, runStockfishAnalysis, searchDepth, stopAudioPlayback, t]);
+  }, [
+    externalServerUrl,
+    handleVerifyLocalEngine,
+    language,
+    runStockfishAnalysis,
+    searchDepth,
+    stopAudioPlayback,
+    t,
+    visionApiUrl,
+  ]);
 
   return (
     <div className="relative min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col">
@@ -1405,7 +1449,12 @@ export default function App() {
             <CapturePreviewPanel
               isScanningFen={isScanningFen}
               scanError={scanError}
-              onScanBoardFen={() => void handleScanBoardFen()}
+              onScanBoardFen={() => void handleScanBoardFen(false)}
+              autoScanPieces={autoScanPieces}
+              onToggleAutoScanPieces={() => setAutoScanPieces((v) => !v)}
+              visionApiUrl={visionApiUrl}
+              resolvedVisionEndpoint={resolvedVisionEndpoint}
+              onSaveVisionApiUrl={handleSaveVisionApiUrl}
               orientation={config.orientation}
               onChangeOrientation={(nextOrientation) => {
                 pipelineRef.current?.captureBaselineNextFrame();
@@ -1430,6 +1479,9 @@ export default function App() {
               analysisError={analysisError}
               isOnline={isOnline}
               activeEngineSource={activeEngineSource}
+              localEngineVerify={localEngineVerify}
+              isVerifyingEngine={isVerifyingEngine}
+              onVerifyLocalEngine={() => void handleVerifyLocalEngine()}
               remoteServerStatus={remoteServerStatus}
               externalServerUrl={externalServerUrl}
               onSaveExternalServerUrl={handleSaveExternalServerUrl}

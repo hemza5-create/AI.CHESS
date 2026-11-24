@@ -1,6 +1,17 @@
 import { Chess } from 'chess.js';
 import type { StockfishAnalysisResult, UciLineInfo } from '../types/chess.ts';
 
+export interface LocalEngineVerificationResult {
+  ok: boolean;
+  backend: 'wasm' | 'asm' | null;
+  engineName: string | null;
+  latencyMs: number;
+  bestMove: string | null;
+  nps: number;
+  checkedAt: string;
+  error?: string;
+}
+
 function eloToSearchDepth(elo: number): number {
   const clamped = Math.max(800, Math.min(2800, Math.round(elo)));
   return Math.max(5, Math.min(18, Math.round(5 + ((clamped - 800) / 2000) * 13)));
@@ -50,11 +61,15 @@ const WORKER_CANDIDATES: { url: string; backend: 'wasm' | 'asm' }[] = [
   { url: '/stockfish/stockfish-19-asm.js', backend: 'asm' },
 ];
 
+const VERIFICATION_TEST_FEN =
+  'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
+
 class LocalStockfishEngine {
   private worker: Worker | null = null;
   private ready = false;
   private needsFlush = false;
   private activeBackend: 'wasm' | 'asm' | null = null;
+  private engineName: string | null = null;
   private initPromise: Promise<void> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private lineListeners: Set<(line: string) => void> = new Set();
@@ -62,6 +77,10 @@ class LocalStockfishEngine {
 
   public getActiveBackend(): 'wasm' | 'asm' | null {
     return this.activeBackend;
+  }
+
+  public getEngineName(): string | null {
+    return this.engineName;
   }
 
   public isEngineReady(): boolean {
@@ -80,6 +99,7 @@ class LocalStockfishEngine {
     this.ready = false;
     this.needsFlush = false;
     this.activeBackend = null;
+    this.engineName = null;
     this.initPromise = null;
     const reason = err ?? new Error('توقف محرك Stockfish المحلي بشكل غير متوقع.');
     for (const listener of this.errorListeners) {
@@ -101,6 +121,42 @@ class LocalStockfishEngine {
     }
   }
 
+  public async verifyLocalEngine(locale = 'en-US'): Promise<LocalEngineVerificationResult> {
+    const startMs = Date.now();
+    const checkedAt = new Date().toLocaleTimeString(locale, {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    try {
+      const result = await this.analyze(VERIFICATION_TEST_FEN, 7, 1);
+      const latencyMs = Math.max(1, Date.now() - startMs);
+      const ok = Boolean(this.worker && this.ready && result.bestMove);
+      return {
+        ok,
+        backend: this.activeBackend,
+        engineName: this.engineName ?? 'Stockfish 19',
+        latencyMs,
+        bestMove: result.bestMoveSan ?? result.bestMove,
+        nps: result.nps,
+        checkedAt,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        backend: this.activeBackend,
+        engineName: this.engineName,
+        latencyMs: Math.max(1, Date.now() - startMs),
+        bestMove: null,
+        nps: 0,
+        checkedAt,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
   private async startWorkerScript(scriptUrl: string): Promise<void> {
     if (typeof globalThis.Worker === 'undefined') {
       throw new Error('المتصفح أو WebView لا يدعم Web Workers لتشغيل Stockfish محلياً.');
@@ -114,6 +170,7 @@ class LocalStockfishEngine {
       this.worker = worker;
       this.ready = false;
       this.needsFlush = false;
+      this.engineName = null;
 
       const cleanup = () => {
         clearTimeout(timeout);
@@ -141,7 +198,9 @@ class LocalStockfishEngine {
       }, 12000);
 
       const onLine = (line: string) => {
-        if (line === 'uciok' && !gotUciOk) {
+        if (line.startsWith('id name ')) {
+          this.engineName = line.slice('id name '.length).trim() || null;
+        } else if (line === 'uciok' && !gotUciOk) {
           gotUciOk = true;
           worker.postMessage('setoption name MultiPV value 3');
           worker.postMessage('isready');

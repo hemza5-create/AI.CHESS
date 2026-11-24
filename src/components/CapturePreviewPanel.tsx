@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Camera,
   Loader2,
   ShieldCheck,
   X,
   CheckCircle2,
+  Link2,
+  Radio,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import type { BoardOrientation, CapturedBoardPreview } from '../types/chess.ts';
@@ -13,6 +15,11 @@ interface CapturePreviewPanelProps {
   isScanningFen: boolean;
   scanError: string | null;
   onScanBoardFen: () => void;
+  autoScanPieces: boolean;
+  onToggleAutoScanPieces: () => void;
+  visionApiUrl: string;
+  resolvedVisionEndpoint: string | null;
+  onSaveVisionApiUrl: (url: string) => void;
   orientation: BoardOrientation;
   onChangeOrientation: (orientation: BoardOrientation) => void;
   opponentMoveOnly: boolean;
@@ -27,6 +34,11 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
   isScanningFen,
   scanError,
   onScanBoardFen,
+  autoScanPieces,
+  onToggleAutoScanPieces,
+  visionApiUrl,
+  resolvedVisionEndpoint,
+  onSaveVisionApiUrl,
   orientation,
   onChangeOrientation,
   opponentMoveOnly,
@@ -37,6 +49,12 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
   onApplyBestMoveFromPreview,
 }) => {
   const { t } = useLanguage();
+  const [showApiConfig, setShowApiConfig] = useState(false);
+  const [endpointDraft, setEndpointDraft] = useState(visionApiUrl);
+
+  useEffect(() => {
+    setEndpointDraft(visionApiUrl);
+  }, [visionApiUrl]);
 
   return (
     <section
@@ -49,12 +67,12 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
         <button
           type="button"
           onClick={onScanBoardFen}
           disabled={isScanningFen}
-          className="flex-1 min-w-[175px] inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-base font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:pointer-events-none rounded-lg transition-colors shadow-sm"
+          className="flex-1 min-w-[165px] inline-flex items-center justify-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-base font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 disabled:pointer-events-none rounded-lg transition-colors shadow-sm"
         >
           {isScanningFen ? (
             <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin shrink-0" />
@@ -70,6 +88,20 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
 
         <button
           type="button"
+          onClick={onToggleAutoScanPieces}
+          title={t.autoPlacePiecesTooltip}
+          className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2.5 text-[11px] sm:text-sm font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+            autoScanPieces
+              ? 'border-cyan-400/70 bg-cyan-500/20 text-cyan-200'
+              : 'border-slate-500/70 bg-slate-900/65 text-slate-100 hover:text-white'
+          }`}
+        >
+          <Radio className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${autoScanPieces ? 'animate-pulse text-cyan-300' : ''}`} />
+          <span>{t.autoPlacePiecesBtn}</span>
+        </button>
+
+        <button
+          type="button"
           onClick={onToggleOpponentMoveOnly}
           title={t.opponentMoveOnlyTooltip}
           className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2.5 text-[11px] sm:text-sm font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
@@ -81,6 +113,83 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
           <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           <span>{t.opponentMoveOnlyBtn}</span>
         </button>
+      </div>
+
+      {/* External Vision API Endpoint Bar */}
+      <div className="rounded-lg border border-slate-600/50 bg-[#070B12]/60 px-2.5 py-1.5 sm:px-3 sm:py-2 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] sm:text-xs">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="text-slate-300 font-medium shrink-0">{t.activeEndpointLabel}</span>
+            <code
+              dir="ltr"
+              className="font-mono text-cyan-200 truncate"
+              title={resolvedVisionEndpoint ?? ''}
+            >
+              {resolvedVisionEndpoint ?? '—'}
+            </code>
+            {autoScanPieces && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 font-semibold shrink-0">
+                {t.autoPlaceActiveStatus}
+              </span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowApiConfig((v) => !v)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-cyan-200 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/45 rounded transition-colors whitespace-nowrap shrink-0"
+          >
+            <Link2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <span>{showApiConfig ? t.hideUrl : t.visionApiEndpointBtn}</span>
+          </button>
+        </div>
+
+        {showApiConfig && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSaveVisionApiUrl(endpointDraft);
+              setShowApiConfig(false);
+            }}
+            className="pt-2 border-t border-slate-600/50 space-y-1.5"
+          >
+            <label
+              htmlFor="vision-api-endpoint-input"
+              className="block text-[11px] sm:text-xs font-medium text-slate-200"
+            >
+              {t.visionApiEndpointLabel}
+            </label>
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <input
+                id="vision-api-endpoint-input"
+                type="text"
+                dir="ltr"
+                value={endpointDraft}
+                onChange={(e) => setEndpointDraft(e.target.value)}
+                placeholder={t.visionApiPlaceholder}
+                className="flex-1 min-w-[170px] bg-[#05080E] border border-slate-500/70 rounded px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-mono text-white focus:outline-none focus:border-cyan-400"
+              />
+              <button
+                type="submit"
+                className="px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-xs font-bold bg-cyan-400 hover:bg-cyan-300 text-slate-950 rounded transition-colors shrink-0"
+              >
+                {t.saveEndpointBtn}
+              </button>
+              {visionApiUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEndpointDraft('');
+                    onSaveVisionApiUrl('');
+                  }}
+                  className="px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-500/60 rounded transition-colors shrink-0"
+                >
+                  {t.defaultServerBtn}
+                </button>
+              )}
+            </div>
+          </form>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] sm:text-sm">

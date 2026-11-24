@@ -14,12 +14,16 @@ import {
   Globe,
   WifiOff,
   RefreshCw,
+  ExternalLink,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import type {
   MoveRecord,
   StockfishAnalysisResult,
   TtsVoiceName,
 } from '../types/chess.ts';
+import type { LocalEngineVerificationResult } from '../engine/localStockfishEngine.ts';
 import type {
   ActiveEngineSource,
   RemoteServerStatus,
@@ -33,6 +37,9 @@ interface AnalysisAndVoicePanelProps {
   analysisError: string | null;
   isOnline: boolean;
   activeEngineSource: ActiveEngineSource;
+  localEngineVerify: LocalEngineVerificationResult | null;
+  isVerifyingEngine: boolean;
+  onVerifyLocalEngine: () => void;
   remoteServerStatus: RemoteServerStatus;
   externalServerUrl: string;
   onSaveExternalServerUrl: (url: string) => void;
@@ -68,6 +75,9 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
   analysisError,
   isOnline,
   activeEngineSource,
+  localEngineVerify,
+  isVerifyingEngine,
+  onVerifyLocalEngine,
   remoteServerStatus,
   externalServerUrl,
   onSaveExternalServerUrl,
@@ -163,23 +173,14 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
         </div>
 
         <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
-          {/* Engine Mode & Auto-Reconnect Status Strip */}
+          {/* Local Stockfish Engine Status, Official Link, Verification & External Vision API Strip */}
           <div className="rounded-lg border border-slate-500/50 bg-[#070B12]/65 px-2.5 sm:px-3.5 py-2 sm:py-2.5 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm font-semibold">
-                {activeEngineSource === 'remote' ? (
-                  <>
-                    <Globe className="w-4 h-4 text-emerald-300 shrink-0" />
-                    <span className="text-emerald-200">
-                      {t.engineRemoteConnected}
-                    </span>
-                  </>
-                ) : !isOnline ? (
+                {!isOnline ? (
                   <>
                     <WifiOff className="w-4 h-4 text-amber-300 shrink-0" />
-                    <span className="text-amber-200">
-                      {t.engineOfflineLocal}
-                    </span>
+                    <span className="text-amber-200">{t.engineOfflineLocal}</span>
                   </>
                 ) : (
                   <>
@@ -193,14 +194,93 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={onVerifyLocalEngine}
+                  disabled={isVerifyingEngine}
+                  className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 disabled:opacity-50 rounded transition-colors whitespace-nowrap shrink-0"
+                >
+                  {isVerifyingEngine ? (
+                    <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  )}
+                  <span>
+                    {isVerifyingEngine
+                      ? t.verifyingLocalEngineBtn
+                      : t.verifyLocalEngineBtn}
+                  </span>
+                </button>
+
+                <a
+                  href="https://stockfishchess.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs font-semibold text-white bg-slate-800/85 hover:bg-slate-700 border border-slate-500/60 rounded transition-colors whitespace-nowrap shrink-0"
+                >
+                  <span>{t.stockfishWebsiteBtn}</span>
+                  <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-300" />
+                </a>
+              </div>
+            </div>
+
+            {/* Local Stockfish Self-Test Result */}
+            {localEngineVerify && (
+              <div
+                className={`flex flex-wrap items-center gap-1.5 rounded px-2 py-1 text-[11px] sm:text-xs font-medium border ${
+                  localEngineVerify.ok
+                    ? 'bg-emerald-500/15 border-emerald-400/45 text-emerald-200'
+                    : 'bg-rose-500/15 border-rose-400/50 text-rose-200'
+                }`}
+              >
+                {localEngineVerify.ok ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                    <span>
+                      {t.localEngineVerifiedOk(
+                        localEngineVerify.backend === 'asm' ? 'ASM.js' : 'WebAssembly',
+                        localEngineVerify.bestMove ?? '—',
+                        localEngineVerify.latencyMs
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-300 shrink-0" />
+                    <span>
+                      {t.localEngineVerifyFailed(localEngineVerify.error ?? 'Error')}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* External API Server Connection Row (for Snapshots & Voice AI) */}
+            <div className="pt-1.5 border-t border-slate-600/45 flex flex-wrap items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-medium text-slate-200">
+                <Globe
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    remoteServerStatus === 'connected'
+                      ? 'text-emerald-300'
+                      : 'text-slate-400'
+                  }`}
+                />
+                <span>
+                  {remoteServerStatus === 'connected'
+                    ? t.externalVisionConnectedBadge
+                    : t.externalServerBtn}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
                 {isOnline && (
                   <button
                     type="button"
                     onClick={onReconnectServer}
                     disabled={remoteServerStatus === 'checking'}
                     title={t.checkServerTooltip}
-                    className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs font-semibold text-slate-100 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-500/60 disabled:opacity-50 rounded transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-slate-100 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-500/60 disabled:opacity-50 rounded transition-colors whitespace-nowrap shrink-0"
                   >
                     <RefreshCw
                       className={`w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-300 ${
@@ -213,7 +293,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowServerConfig((v) => !v)}
-                  className="px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs font-semibold text-cyan-200 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/50 rounded transition-colors whitespace-nowrap shrink-0"
+                  className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-cyan-200 hover:text-white bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/50 rounded transition-colors whitespace-nowrap shrink-0"
                 >
                   {showServerConfig ? t.hideUrl : t.externalServerBtn}
                 </button>
@@ -226,7 +306,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
                   e.preventDefault();
                   onSaveExternalServerUrl(serverUrlDraft);
                 }}
-                className="pt-2.5 border-t border-slate-600/50 space-y-2"
+                className="pt-2 border-t border-slate-600/50 space-y-2"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <input

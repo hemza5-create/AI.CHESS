@@ -127,6 +127,14 @@ export interface TranslationDictionary {
   pausedLabel: string;
   capturePreviewBestMoveBtn: string;
   capturingPreviewBestMoveBtn: string;
+  autoPlacePiecesBtn: string;
+  autoPlacePiecesTooltip: string;
+  autoPlaceActiveStatus: string;
+  visionApiEndpointBtn: string;
+  visionApiEndpointLabel: string;
+  visionApiPlaceholder: string;
+  saveEndpointBtn: string;
+  activeEndpointLabel: string;
   opponentMoveOnlyBtn: string;
   opponentMoveOnlyTooltip: string;
   yourZoneLabel: string;
@@ -183,6 +191,12 @@ export interface TranslationDictionary {
   engineOfflineLocal: string;
   engineLocalAsm: string;
   engineLocalWasm: string;
+  stockfishWebsiteBtn: string;
+  verifyLocalEngineBtn: string;
+  verifyingLocalEngineBtn: string;
+  localEngineVerifiedOk: (backend: string, bestMove: string, latencyMs: number) => string;
+  localEngineVerifyFailed: (error: string) => string;
+  externalVisionConnectedBadge: string;
   checkingServer: string;
   checkServer: string;
   checkServerTooltip: string;
@@ -370,6 +384,15 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     pausedLabel: 'متوقف',
     capturePreviewBestMoveBtn: 'التقاط صورة للمعاينة واستخراج أفضل نقلة',
     capturingPreviewBestMoveBtn: 'جاري التقاط المصفوفة واستخراج أفضل نقلة...',
+    autoPlacePiecesBtn: 'تعيين القطع تلقائياً',
+    autoPlacePiecesTooltip:
+      'إرسال لقطات الرقعة تلقائياً إلى نقطة نهاية API الخارجية لتحليلها وتعيين القطع على الرقعة المتزامنة',
+    autoPlaceActiveStatus: 'المزامنة التلقائية عبر API نشطة',
+    visionApiEndpointBtn: 'رابط API اللقطات',
+    visionApiEndpointLabel: 'نقطة نهاية API لتحليل لقطات الرقعة:',
+    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    saveEndpointBtn: 'حفظ المسار',
+    activeEndpointLabel: 'المسار النشط:',
     opponentMoveOnlyBtn: 'نقلة الخصم حصراً',
     opponentMoveOnlyTooltip:
       'تجاهل الحركات العشوائية وحصر التحليل بنقلة الخصم لتوليد الرد الأمثل عبر UCI',
@@ -425,20 +448,27 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     depthShort: 'Depth',
     autoEloBtn: 'تلقائي (Elo)',
     depthSliderLabel: 'العمق:',
-    engineRemoteConnected: 'خادم Stockfish الخارجي متصل تلقائياً',
+    engineRemoteConnected: 'خادم API الخارجي متصل (Stockfish محلي)',
     engineOfflineLocal: 'وضع عدم الاتصال · محرك WebAssembly محلي',
     engineLocalAsm: 'محرك Stockfish محلي (JS · يعمل بدون إنترنت)',
-    engineLocalWasm: 'محرك Stockfish WebAssembly محلي (جاهز بدون إنترنت)',
+    engineLocalWasm: 'محرك Stockfish WebAssembly محلي (يعمل محلياً)',
+    stockfishWebsiteBtn: 'موقع Stockfish',
+    verifyLocalEngineBtn: 'فحص المحرك محلياً',
+    verifyingLocalEngineBtn: 'جاري التحقق...',
+    localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
+      `تم التحقق محلياً (${backend}) · نقلة اختبار: ${bestMove} (${latencyMs}ms)`,
+    localEngineVerifyFailed: (error) => `فشل التحقق المحلي: ${error}`,
+    externalVisionConnectedBadge: 'خادم API متصل للقطات الرقعة والصوت',
     checkingServer: 'جاري الفحص...',
     checkServer: 'فحص الخادم',
-    checkServerTooltip: 'فحص وإعادة الاتصال بالخادم الخارجي تلقائياً',
+    checkServerTooltip: 'فحص الاتصال بالخادم الخارجي للقطات الرقعة والشرح الصوتي',
     hideUrl: 'إخفاء الرابط',
-    externalServerBtn: 'خادم خارجي',
+    externalServerBtn: 'خادم API الخارجي',
     serverUrlPlaceholder: 'https://your-server.example.com (اختياري)',
     saveAndConnect: 'حفظ واتصال',
     defaultServerBtn: 'افتراضي',
     serverHelpText:
-      'يعمل محرك Stockfish عبر WebAssembly محلياً دون إنترنت في المتصفح والتطبيق، ويتصل تلقائياً بالخادم أعلاه (أو خادم الاستضافة) عند توفر الشبكة.',
+      'يعمل محرك Stockfish محلياً دائماً عبر WebAssembly لتحليل النقلات دون اتصال، بينما يتصل التطبيق بالخادم الخارجي أعلاه لإرسال لقطات الرقعة وتعيين القطع والشرح الصوتي.',
     evaluationLabel: 'التقييم',
     bestMoveLabel: 'أفضل نقلة',
     applyBestMoveTooltip: 'تطبيق هذه النقلة على الرقعة',
@@ -649,6 +679,15 @@ def analyze_and_explain(uci_move):
     pausedLabel: 'Paused',
     capturePreviewBestMoveBtn: 'Capture Preview & Extract Best Move',
     capturingPreviewBestMoveBtn: 'Capturing matrix & computing best move...',
+    autoPlacePiecesBtn: 'Auto-Place Pieces',
+    autoPlacePiecesTooltip:
+      'Automatically send board snapshots to the external API endpoint to analyze and set pieces on the synchronized board',
+    autoPlaceActiveStatus: 'Auto API piece sync active',
+    visionApiEndpointBtn: 'Snapshot API URL',
+    visionApiEndpointLabel: 'External Snapshot Analysis API Endpoint:',
+    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    saveEndpointBtn: 'Save Endpoint',
+    activeEndpointLabel: 'Active endpoint:',
     opponentMoveOnlyBtn: 'Opponent Move Only',
     opponentMoveOnlyTooltip:
       'Ignore random movements and focus exclusively on opponent moves for UCI reply',
@@ -704,20 +743,27 @@ def analyze_and_explain(uci_move):
     depthShort: 'Depth',
     autoEloBtn: 'Auto (Elo)',
     depthSliderLabel: 'Depth:',
-    engineRemoteConnected: 'External Stockfish Server Connected',
+    engineRemoteConnected: 'External API Connected (Local Stockfish)',
     engineOfflineLocal: 'Offline Mode · Local WebAssembly Engine',
-    engineLocalAsm: 'Local Stockfish Engine (JS · Offline-Ready)',
-    engineLocalWasm: 'Local Stockfish WebAssembly (Offline-Ready)',
+    engineLocalAsm: 'Local Stockfish Engine (JS · Running Locally)',
+    engineLocalWasm: 'Local Stockfish WebAssembly (Running Locally)',
+    stockfishWebsiteBtn: 'Stockfish Website',
+    verifyLocalEngineBtn: 'Verify Local Engine',
+    verifyingLocalEngineBtn: 'Verifying...',
+    localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
+      `Local verified (${backend}) · test move: ${bestMove} (${latencyMs}ms)`,
+    localEngineVerifyFailed: (error) => `Local verification failed: ${error}`,
+    externalVisionConnectedBadge: 'External API ready for board snapshots & voice',
     checkingServer: 'Checking...',
     checkServer: 'Check Server',
-    checkServerTooltip: 'Probe and auto-connect to the external server',
+    checkServerTooltip: 'Check connection to the external server for snapshots and AI voice',
     hideUrl: 'Hide URL',
-    externalServerBtn: 'External Server',
+    externalServerBtn: 'External API Server',
     serverUrlPlaceholder: 'https://your-server.example.com (optional)',
     saveAndConnect: 'Save & Connect',
     defaultServerBtn: 'Default',
     serverHelpText:
-      'Stockfish runs locally offline via WebAssembly in both browser and app, and automatically connects to the server above (or host server) when network is available.',
+      'Stockfish always runs locally via WebAssembly in both browser and app, while snapshots and optional voice commentary are sent to the external server/API endpoint above.',
     evaluationLabel: 'Evaluation',
     bestMoveLabel: 'Best Move',
     applyBestMoveTooltip: 'Apply this move to the board',
@@ -930,6 +976,15 @@ def analyze_and_explain(uci_move):
     pausedLabel: 'Пауза',
     capturePreviewBestMoveBtn: 'Сделать снимок и найти лучший ход',
     capturingPreviewBestMoveBtn: 'Считывание матрицы и поиск лучшего хода...',
+    autoPlacePiecesBtn: 'Авто-расстановка',
+    autoPlacePiecesTooltip:
+      'Автоматически отправлять снимки доски на внешний API для распознавания и расстановки фигур',
+    autoPlaceActiveStatus: 'Автосинхронизация API активна',
+    visionApiEndpointBtn: 'URL API снимков',
+    visionApiEndpointLabel: 'Конечная точка API для анализа снимков доски:',
+    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    saveEndpointBtn: 'Сохранить URL',
+    activeEndpointLabel: 'Активный путь:',
     opponentMoveOnlyBtn: 'Только ход соперника',
     opponentMoveOnlyTooltip:
       'Игнорировать случайные движения и анализировать только ход соперника для ответа UCI',
@@ -985,20 +1040,27 @@ def analyze_and_explain(uci_move):
     depthShort: 'Depth',
     autoEloBtn: 'Авто (Elo)',
     depthSliderLabel: 'Глубина:',
-    engineRemoteConnected: 'Внешний сервер Stockfish подключён',
+    engineRemoteConnected: 'Внешний API подключён (Stockfish локально)',
     engineOfflineLocal: 'Офлайн · Локальный движок WebAssembly',
-    engineLocalAsm: 'Локальный движок Stockfish (JS · офлайн)',
-    engineLocalWasm: 'Локальный Stockfish WebAssembly (готов офлайн)',
+    engineLocalAsm: 'Локальный движок Stockfish (JS · локально)',
+    engineLocalWasm: 'Локальный Stockfish WebAssembly (работает локально)',
+    stockfishWebsiteBtn: 'Сайт Stockfish',
+    verifyLocalEngineBtn: 'Проверить локально',
+    verifyingLocalEngineBtn: 'Проверка...',
+    localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
+      `Проверено локально (${backend}) · тест: ${bestMove} (${latencyMs}мс)`,
+    localEngineVerifyFailed: (error) => `Ошибка локальной проверки: ${error}`,
+    externalVisionConnectedBadge: 'Внешний API готов для снимков и озвучки',
     checkingServer: 'Проверка...',
     checkServer: 'Проверить сервер',
-    checkServerTooltip: 'Проверить и автоматически подключиться к внешнему серверу',
+    checkServerTooltip: 'Проверить подключение к внешнему серверу для снимков и озвучки ИИ',
     hideUrl: 'Скрыть URL',
-    externalServerBtn: 'Внешний сервер',
+    externalServerBtn: 'Внешний API сервер',
     serverUrlPlaceholder: 'https://your-server.example.com (необязательно)',
     saveAndConnect: 'Сохранить',
     defaultServerBtn: 'По умолч.',
     serverHelpText:
-      'Stockfish работает локально без интернета через WebAssembly и автоматически подключается к указанному серверу при появлении сети.',
+      'Stockfish всегда работает локально через WebAssembly, а внешний сервер/API используется для отправки снимков доски и голосовой озвучки.',
     evaluationLabel: 'Оценка',
     bestMoveLabel: 'Лучший ход',
     applyBestMoveTooltip: 'Применить этот ход на доске',
@@ -1209,6 +1271,15 @@ def analyze_and_explain(uci_move):
     pausedLabel: '已暂停',
     capturePreviewBestMoveBtn: '抓拍预览并提取最佳着法',
     capturingPreviewBestMoveBtn: '正在抓取矩阵并计算最佳着法...',
+    autoPlacePiecesBtn: '自动放置棋子',
+    autoPlacePiecesTooltip:
+      '自动将棋盘截图发送到外部 API 端点进行识别，并自动同步棋子到数字棋盘',
+    autoPlaceActiveStatus: 'API 自动摆棋同步中',
+    visionApiEndpointBtn: '截图 API 端点',
+    visionApiEndpointLabel: '棋盘截图识别外部 API 端点：',
+    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    saveEndpointBtn: '保存接口',
+    activeEndpointLabel: '当前接口:',
     opponentMoveOnlyBtn: '仅限对手走法',
     opponentMoveOnlyTooltip: '忽略杂乱动作，仅分析对手走法以通过 UCI 生成最佳应对',
     yourZoneLabel: '己方区域（下半部分）：',
@@ -1263,20 +1334,27 @@ def analyze_and_explain(uci_move):
     depthShort: 'Depth',
     autoEloBtn: '自动 (Elo)',
     depthSliderLabel: '深度:',
-    engineRemoteConnected: '外部 Stockfish 服务器已自动连接',
+    engineRemoteConnected: '外部 API 已连接（Stockfish 本地运行）',
     engineOfflineLocal: '离线模式 · 本地 WebAssembly 引擎',
-    engineLocalAsm: '本地 Stockfish 引擎 (JS · 支持离线)',
-    engineLocalWasm: '本地 Stockfish WebAssembly (离线就绪)',
+    engineLocalAsm: '本地 Stockfish 引擎 (JS · 本地运行)',
+    engineLocalWasm: '本地 Stockfish WebAssembly (本地运行)',
+    stockfishWebsiteBtn: 'Stockfish 官网',
+    verifyLocalEngineBtn: '验证本地引擎',
+    verifyingLocalEngineBtn: '验证中...',
+    localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
+      `本地验证通过 (${backend}) · 测试着法: ${bestMove} (${latencyMs}ms)`,
+    localEngineVerifyFailed: (error) => `本地验证失败: ${error}`,
+    externalVisionConnectedBadge: '外部 API 已就绪，可用于棋盘识别与语音',
     checkingServer: '检测中...',
     checkServer: '检测服务器',
-    checkServerTooltip: '检测并自动连接外部服务器',
+    checkServerTooltip: '检测用于棋盘截图识别与 AI 语音的外部服务器连接',
     hideUrl: '隐藏地址',
-    externalServerBtn: '外部服务器',
+    externalServerBtn: '外部 API 服务器',
     serverUrlPlaceholder: 'https://your-server.example.com (可选)',
     saveAndConnect: '保存并连接',
     defaultServerBtn: '默认',
     serverHelpText:
-      'Stockfish 通过 WebAssembly 在浏览器和应用内完全离线运行，当网络可用时会自动连接上方服务器（或托管服务器）。',
+      'Stockfish 始终在浏览器和应用内通过 WebAssembly 本地运行；棋盘截图识别与可选语音讲解将发送到上方配置的外部服务器/API 端点。',
     evaluationLabel: '局面评估',
     bestMoveLabel: '最佳着法',
     applyBestMoveTooltip: '在棋盘上走这一步',
@@ -1484,6 +1562,15 @@ def analyze_and_explain(uci_move):
     pausedLabel: 'En pause',
     capturePreviewBestMoveBtn: 'Capturer pour aperçu et trouver le meilleur coup',
     capturingPreviewBestMoveBtn: 'Capture de la matrice et calcul du meilleur coup...',
+    autoPlacePiecesBtn: 'Placement auto',
+    autoPlacePiecesTooltip:
+      'Envoyer automatiquement les captures d’échiquier à l’API externe pour analyser et placer les pièces',
+    autoPlaceActiveStatus: 'Synchro auto par API active',
+    visionApiEndpointBtn: 'URL API captures',
+    visionApiEndpointLabel: 'Point de terminaison API pour les captures :',
+    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    saveEndpointBtn: 'Enregistrer',
+    activeEndpointLabel: 'URL active :',
     opponentMoveOnlyBtn: 'Coup adverse seul',
     opponentMoveOnlyTooltip:
       'Ignorer les mouvements aléatoires et analyser uniquement le coup adverse via UCI',
@@ -1539,20 +1626,27 @@ def analyze_and_explain(uci_move):
     depthShort: 'Depth',
     autoEloBtn: 'Auto (Elo)',
     depthSliderLabel: 'Prof. :',
-    engineRemoteConnected: 'Serveur Stockfish externe connecté',
+    engineRemoteConnected: 'API externe connectée (Stockfish local)',
     engineOfflineLocal: 'Hors ligne · Moteur WebAssembly local',
-    engineLocalAsm: 'Moteur Stockfish local (JS · hors ligne)',
-    engineLocalWasm: 'Stockfish WebAssembly local (prêt hors ligne)',
+    engineLocalAsm: 'Moteur Stockfish local (JS · local)',
+    engineLocalWasm: 'Stockfish WebAssembly local (exécution locale)',
+    stockfishWebsiteBtn: 'Site Stockfish',
+    verifyLocalEngineBtn: 'Vérifier moteur local',
+    verifyingLocalEngineBtn: 'Vérification...',
+    localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
+      `Vérifié localement (${backend}) · coup test : ${bestMove} (${latencyMs}ms)`,
+    localEngineVerifyFailed: (error) => `Échec de vérification locale : ${error}`,
+    externalVisionConnectedBadge: 'API externe prête pour captures et voix IA',
     checkingServer: 'Vérification...',
     checkServer: 'Tester serveur',
-    checkServerTooltip: 'Tester et reconnecter automatiquement au serveur externe',
+    checkServerTooltip: 'Tester la connexion au serveur externe pour captures et voix IA',
     hideUrl: 'Masquer URL',
-    externalServerBtn: 'Serveur externe',
+    externalServerBtn: 'Serveur API externe',
     serverUrlPlaceholder: 'https://votre-serveur.exemple.com (optionnel)',
     saveAndConnect: 'Enregistrer',
     defaultServerBtn: 'Par défaut',
     serverHelpText:
-      'Stockfish fonctionne localement sans Internet via WebAssembly et se connecte automatiquement au serveur ci-dessus dès que le réseau est disponible.',
+      'Stockfish s’exécute toujours localement via WebAssembly dans le navigateur et l’application, tandis que le serveur/API externe ci-dessus reçoit les captures pour placer les pièces.',
     evaluationLabel: 'Évaluation',
     bestMoveLabel: 'Meilleur coup',
     applyBestMoveTooltip: 'Appliquer ce coup sur l’échiquier',
