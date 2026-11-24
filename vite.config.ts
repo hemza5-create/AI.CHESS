@@ -12,7 +12,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+        includeAssets: ['apple-touch-icon.png', 'favicon-32x32.png'],
         manifest: {
           id: '/',
           name: 'رَصْد الشطرنج — Stockfish UCI',

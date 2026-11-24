@@ -811,9 +811,14 @@ export default function App() {
           {/* Zone 1: Single-line Brand Title */}
           <a
             href="#vision-stage"
-            className="text-base font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
+            className="flex items-center gap-2.5 text-base font-bold tracking-tight text-slate-100 whitespace-nowrap shrink-0"
           >
-            رَصْد الشطرنج
+            <img
+              src="/assets/aistudio/FB_IMG_1795486450572_eb120a57.jpg"
+              alt="شعار رَصْد الشطرنج"
+              className="w-8 h-8 rounded-lg object-cover object-top ring-1 ring-amber-400/30 shrink-0"
+            />
+            <span>رَصْد الشطرنج</span>
           </a>
 
           {/* Zone 2: Concise Navigation Links */}
