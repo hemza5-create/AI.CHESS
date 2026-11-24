@@ -5,20 +5,24 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+type GlobalWithPWA = typeof globalThis & {
+  matchMedia?: (query: string) => { matches: boolean };
+  navigator?: { userAgent?: string; standalone?: boolean };
+};
+
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
+    const g = globalThis as GlobalWithPWA;
     const isStandaloneDisplay =
-      globalThis.matchMedia?.('(display-mode: standalone)').matches ?? false;
-    const isIosStandalone =
-      (globalThis.navigator as unknown as { standalone?: boolean } | undefined)?.standalone ===
-      true;
+      g.matchMedia?.('(display-mode: standalone)')?.matches ?? false;
+    const isIosStandalone = g.navigator?.standalone === true;
     setIsInstalled(isStandaloneDisplay || isIosStandalone);
 
-    const userAgent = (globalThis.navigator?.userAgent ?? '').toLowerCase();
+    const userAgent = (g.navigator?.userAgent ?? '').toLowerCase();
     setIsIOS(/iphone|ipad|ipod/.test(userAgent));
 
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -31,12 +35,12 @@ export function usePWAInstall() {
       setDeferredPrompt(null);
     };
 
-    globalThis.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    globalThis.addEventListener('appinstalled', handleAppInstalled);
+    globalThis.addEventListener?.('beforeinstallprompt', handleBeforeInstallPrompt);
+    globalThis.addEventListener?.('appinstalled', handleAppInstalled);
 
     return () => {
-      globalThis.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      globalThis.removeEventListener('appinstalled', handleAppInstalled);
+      globalThis.removeEventListener?.('beforeinstallprompt', handleBeforeInstallPrompt);
+      globalThis.removeEventListener?.('appinstalled', handleAppInstalled);
     };
   }, []);
 

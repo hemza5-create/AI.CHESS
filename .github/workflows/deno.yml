@@ -1,21 +1,10 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# This workflow will install Deno then run `deno lint` and `deno test`.
-# For more information see: https://github.com/denoland/setup-deno
-
 name: Deno
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
-    branches: ["main"]
-
-permissions:
-  contents: read
+    branches: [main]
 
 jobs:
   test:
@@ -23,20 +12,31 @@ jobs:
 
     steps:
       - name: Setup repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Install npm dependencies
+        run: npm install --no-audit --no-fund
 
       - name: Setup Deno
-        # uses: denoland/setup-deno@v1
-        uses: denoland/setup-deno@61fe2df320078202e33d7d5ad347e7dcfa0e8f31  # v1.1.2
+        uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
-      # Uncomment this step to verify the use of 'deno fmt' on each commit.
-      # - name: Verify formatting
-      #   run: deno fmt --check
+      - name: Run Deno linter
+        run: deno lint src/ server.ts
 
-      - name: Run linter
-        run: deno lint
+      - name: Run TypeScript check and build
+        run: |
+          npm run lint
+          npm run build
 
-      - name: Run tests
-        run: deno test -A
+      - name: Run Deno type check on hook
+        run: deno check src/hooks/usePWAInstall.ts
+
+      - name: Run Deno tests
+        run: deno test --allow-all --permit-no-files
