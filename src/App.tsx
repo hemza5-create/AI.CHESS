@@ -9,6 +9,7 @@ import { PWAInstallButton } from './components/PWAInstallButton.tsx';
 import { OpenCvChessPipeline, computeFitRoi } from './vision/opencvPipeline.ts';
 import { renderVirtualBoardToCanvas, SAMPLE_GAMES } from './vision/virtualBoardRenderer.ts';
 import { playMoveTapSound, unlockAudioContext } from './utils/soundEffects.ts';
+import { localStockfishEngine } from './engine/localStockfishEngine.ts';
 import type {
   CaptureSource,
   FrameTelemetry,
@@ -51,6 +52,11 @@ def analyze_and_explain(uci_move):
         info = engine.analyse(board, chess.engine.Limit(depth=15))
         print(f"النقلة: {uci_move} | أفضل رد: {info['pv'][0]} | التقييم: {info['score'].white()}")`;
 
+function isCapacitorNativeRuntime(): boolean {
+  const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  return Boolean(cap?.isNativePlatform?.());
+}
+
 async function parseJsonResponse<T>(res: Response, fallbackError: string): Promise<T> {
   const rawText = await res.text();
   if (!rawText.trim()) {
@@ -60,8 +66,13 @@ async function parseJsonResponse<T>(res: Response, fallbackError: string): Promi
   try {
     parsed = JSON.parse(rawText);
   } catch {
+    if (isCapacitorNativeRuntime() || rawText.trimStart().startsWith('<')) {
+      throw new Error(
+        'هذه الميزة السحابية تتطلب اتصالاً بخادم التطبيق، بينما يعمل محرك Stockfish والرؤية الحاسوبية محلياً دون خادم.'
+      );
+    }
     throw new Error(
-      `استجاب المحرك بصيغة غير صالحة (ليست JSON). تأكد من تشغيل خادم التطبيق (${res.status}).`
+      `استجاب الخادم بصيغة غير صالحة (ليست JSON). تأكد من تشغيل خادم التطبيق (${res.status}).`
     );
   }
   if (!res.ok) {
@@ -142,6 +153,7 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const analyzeAbortRef = useRef<AbortController | null>(null);
+  const useLocalStockfishRef = useRef<boolean>(isCapacitorNativeRuntime());
 
   // Gemini Explanation & TTS State (on-demand toggle)
   const [voiceCoachEnabled, setVoiceCoachEnabled] = useState<boolean>(false);
@@ -269,22 +281,53 @@ export default function App() {
       setAnalysisError(null);
 
       try {
-        const res = await fetch('/api/stockfish/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fen: targetFen,
+        let typed: StockfishAnalysisResult;
+
+        if (useLocalStockfishRef.current) {
+          typed = await localStockfishEngine.analyze(
+            targetFen,
             depth,
-            multiPv: 3,
+            3,
             playerElo,
-            autoDepthByElo,
-          }),
-          signal: controller.signal,
-        });
-        const typed = await parseJsonResponse<StockfishAnalysisResult>(
-          res,
-          'فشل تحليل Stockfish.'
-        );
+            autoDepthByElo
+          );
+        } else {
+          try {
+            const res = await fetch('/api/stockfish/analyze', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fen: targetFen,
+                depth,
+                multiPv: 3,
+                playerElo,
+                autoDepthByElo,
+              }),
+              signal: controller.signal,
+            });
+            const contentType = res.headers.get('content-type') ?? '';
+            if (!res.ok || !contentType.includes('application/json')) {
+              throw new Error('BACKEND_UNAVAILABLE');
+            }
+            typed = await parseJsonResponse<StockfishAnalysisResult>(
+              res,
+              'فشل تحليل Stockfish.'
+            );
+          } catch (backendErr) {
+            if ((backendErr as Error).name === 'AbortError') throw backendErr;
+            // Fallback transparently to local WebView/WASM Stockfish worker
+            useLocalStockfishRef.current = true;
+            typed = await localStockfishEngine.analyze(
+              targetFen,
+              depth,
+              3,
+              playerElo,
+              autoDepthByElo
+            );
+          }
+        }
+
+        if (controller.signal.aborted) return;
         setAnalysis(typed);
 
         // Update latest move evaluation label in history
@@ -393,21 +436,49 @@ export default function App() {
       stopMediaTracks();
 
       try {
-        if (!navigator.mediaDevices) {
-          throw new Error('المتصفح لا يدعم واجهات التقاط الوسائط.');
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+          throw new Error('المتصفح أو التطبيق لا يدعم واجهات التقاط الوسائط في هذا السياق.');
         }
+
+        const acquireCameraStream = async (): Promise<MediaStream> => {
+          const attempts: MediaStreamConstraints[] = [
+            {
+              video: {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: Math.min(config.targetFps, 30), max: 60 },
+              },
+              audio: false,
+            },
+            {
+              video: { facingMode: 'environment' },
+              audio: false,
+            },
+            {
+              video: true,
+              audio: false,
+            },
+          ];
+
+          let lastErr: unknown;
+          for (const constraints of attempts) {
+            try {
+              return await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (err) {
+              lastErr = err;
+              const name = (err as { name?: string })?.name ?? '';
+              if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+                throw err;
+              }
+            }
+          }
+          throw lastErr;
+        };
 
         const stream =
           targetSource === 'camera'
-            ? await navigator.mediaDevices.getUserMedia({
-                video: {
-                  facingMode: 'environment',
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 },
-                  frameRate: { ideal: config.targetFps, max: 60 },
-                },
-                audio: false,
-              })
+            ? await acquireCameraStream()
             : await navigator.mediaDevices.getDisplayMedia({
                 video: { frameRate: { ideal: config.targetFps, max: 60 } },
                 audio: false,
@@ -441,11 +512,20 @@ export default function App() {
         pipelineRef.current?.resetBaseline();
         setIsStreaming(true);
       } catch (err) {
-        const msg =
-          err instanceof Error
-            ? err.message
-            : 'تعذر الوصول إلى الكاميرا أو مشاركة الشاشة.';
-        setStreamError(`تعذر بدء البث: ${msg}`);
+        const errName = (err as { name?: string })?.name ?? '';
+        const rawMsg = err instanceof Error ? err.message : '';
+        const isDenied =
+          errName === 'NotAllowedError' ||
+          errName === 'PermissionDeniedError' ||
+          /permission|denied/i.test(rawMsg);
+        const friendlyMsg = isDenied
+          ? 'تم رفض إذن الكاميرا. اسمح للتطبيق بالوصول إلى الكاميرا من إعدادات الهاتف ثم اضغط «إعادة المحاولة».'
+          : errName === 'NotFoundError' || errName === 'DevicesNotFoundError'
+          ? 'لم يتم العثور على كاميرا متصلة على هذا الجهاز.'
+          : errName === 'NotReadableError'
+          ? 'الكاميرا قيد الاستخدام حالياً بواسطة تطبيق آخر.'
+          : rawMsg || 'تعذر الوصول إلى الكاميرا أو مشاركة الشاشة.';
+        setStreamError(friendlyMsg);
         setIsStreaming(false);
       }
     },
@@ -832,13 +912,13 @@ export default function App() {
         <img
           src="/assets/aistudio/FB_IMG_1795486450572_eb120a57.jpg"
           alt=""
-          className="w-full h-full object-cover object-center opacity-40"
+          className="w-full h-full object-cover object-center opacity-60"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0E14]/75 via-[#0B0E14]/55 to-[#0B0E14]/85" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0E14]/50 via-[#0B0E14]/25 to-[#0B0E14]/60" />
       </div>
 
       {/* Top Bar Contract: Single Row, 3 Zones */}
-      <header className="sticky top-0 z-30 bg-[#0B0E14]/85 backdrop-blur-md border-b border-slate-800/80">
+      <header className="sticky top-0 z-30 bg-[#0B0E14]/60 backdrop-blur-md border-b border-slate-700/50">
         <div className="max-w-[1440px] mx-auto px-6 h-14 flex items-center justify-between gap-8">
           {/* Zone 1: Single-line Brand Title */}
           <a
@@ -1114,9 +1194,9 @@ export default function App() {
         {/* Architecture & Python Reference Implementation */}
         <section
           id="architecture-reference"
-          className="border border-slate-800/80 bg-[#121722]/85 backdrop-blur-sm rounded-xl overflow-hidden"
+          className="border border-slate-700/50 bg-[#121722]/45 backdrop-blur-md rounded-xl overflow-hidden"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 border-b border-slate-700/50">
             <h2 className="text-sm font-semibold text-slate-100">
               هيكلة النظام والمرجع البرمجي (Python OpenCV + Stockfish UCI)
             </h2>
@@ -1132,7 +1212,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleCopyPython}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-[#0B0E14] border border-slate-700 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-[#0B0E14]/55 border border-slate-700/70 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 {copiedPython ? (
                   <>
@@ -1155,30 +1235,30 @@ export default function App() {
                 <h3 className="font-semibold text-slate-100 mb-1">
                   01. التقاط الإطارات والمعالجة الأولية
                 </h3>
-                <p className="text-slate-400">
+                <p className="text-slate-300">
                   تُحوّل الإطارات الملتقطة إلى التدرج الرمادي ثم يُطبّق مرشح{' '}
-                  <span className="font-mono text-slate-200">GaussianBlur</span> لتقليل تشويش
-                  الحساس قبل استخراج الحواف عبر <span className="font-mono text-slate-200">Canny</span>.
+                  <span className="font-mono text-slate-100">GaussianBlur</span> لتقليل تشويش
+                  الحساس قبل استخراج الحواف عبر <span className="font-mono text-slate-100">Canny</span>.
                 </p>
               </div>
               <div>
                 <h3 className="font-semibold text-slate-100 mb-1">
                   02. مطابقة المصفوفة 8×8 مع النقلات القانونية
                 </h3>
-                <p className="text-slate-400">
+                <p className="text-slate-300">
                   تُقسّم منطقة الاهتمام (ROI) إلى 64 مربعاً لقياس تغيّر السطوع بين الإطارين
-                  وربطه بمصفوفة <span className="font-mono text-slate-200">chess.Board</span>.
+                  وربطه بمصفوفة <span className="font-mono text-slate-100">chess.Board</span>.
                 </p>
               </div>
               <div>
                 <h3 className="font-semibold text-slate-100 mb-1">
                   03. مقايضة استهلاك الموارد وزمن الاستجابة
                 </h3>
-                <p className="text-slate-400">
-                  مضاعفة دقة المسح من <span className="font-mono text-slate-200">256px</span> إلى{' '}
-                  <span className="font-mono text-slate-200">800px</span> يزيد عدد البكسلات نحو 10
+                <p className="text-slate-300">
+                  مضاعفة دقة المسح من <span className="font-mono text-slate-100">256px</span> إلى{' '}
+                  <span className="font-mono text-slate-100">800px</span> يزيد عدد البكسلات نحو 10
                   أضعاف، ما يضغط على ميزانية الإطار عند الترددات العالية إذا تجاوز زمن المعالجة
-                  حد <span className="font-mono text-slate-200">1000 / FPS</span> ملي ثانية.
+                  حد <span className="font-mono text-slate-100">1000 / FPS</span> ملي ثانية.
                 </p>
               </div>
             </div>
@@ -1186,7 +1266,7 @@ export default function App() {
             <div className="lg:col-span-7">
               <pre
                 dir="ltr"
-                className="p-4 rounded-lg bg-[#070A10] border border-slate-800 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed"
+                className="p-4 rounded-lg bg-[#070A10]/60 border border-slate-700/60 text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed"
               >
                 <code>{PYTHON_REFERENCE_SNIPPET}</code>
               </pre>

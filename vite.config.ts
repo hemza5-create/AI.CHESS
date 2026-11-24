@@ -49,7 +49,9 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,wasm}'],
+          globIgnores: ['**/stockfish/stockfish-19-asm.js'],
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
             {
@@ -103,6 +105,57 @@ export default defineConfig(() => {
           const distAssets = path.resolve(distDir, 'src/assets');
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, { recursive: true, force: true });
+          }
+        },
+      },
+      {
+        name: 'stockfish-worker-assets',
+        configureServer(server) {
+          const sfBinDir = path.resolve(__dirname, 'node_modules/stockfish/bin');
+          const allowed = new Set([
+            'stockfish-19-lite-single.js',
+            'stockfish-19-lite-single.wasm',
+            'stockfish-19-asm.js',
+          ]);
+          server.middlewares.use('/stockfish', (req, res, next) => {
+            const cleanName = path.basename((req.url ?? '').split('?')[0]);
+            if (!allowed.has(cleanName)) {
+              next();
+              return;
+            }
+            const filePath = path.join(sfBinDir, cleanName);
+            if (!fs.existsSync(filePath)) {
+              next();
+              return;
+            }
+            res.setHeader(
+              'Content-Type',
+              cleanName.endsWith('.wasm')
+                ? 'application/wasm'
+                : 'application/javascript; charset=utf-8'
+            );
+            fs.createReadStream(filePath).pipe(res);
+          });
+        },
+        closeBundle(error?: Error): void {
+          if (error) {
+            return;
+          }
+          const sfBinDir = path.resolve(__dirname, 'node_modules/stockfish/bin');
+          const distSfDir = path.resolve(__dirname, 'dist/stockfish');
+          const files = [
+            'stockfish-19-lite-single.js',
+            'stockfish-19-lite-single.wasm',
+            'stockfish-19-asm.js',
+          ];
+          if (fs.existsSync(sfBinDir)) {
+            fs.mkdirSync(distSfDir, { recursive: true });
+            for (const f of files) {
+              const src = path.join(sfBinDir, f);
+              if (fs.existsSync(src)) {
+                fs.copyFileSync(src, path.join(distSfDir, f));
+              }
+            }
           }
         },
       },

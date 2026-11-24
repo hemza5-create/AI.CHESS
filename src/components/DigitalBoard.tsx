@@ -191,9 +191,9 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
   }, [showBestArrow, analysis?.ponder, orientation]);
 
   return (
-    <section className="flex flex-col border border-slate-800 bg-[#121722] rounded-xl overflow-hidden">
+    <section className="flex flex-col border border-slate-700/50 bg-[#121722]/45 backdrop-blur-md rounded-xl overflow-hidden">
       {/* Header strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-700/50">
         <div className="flex items-center gap-2 min-w-0">
           <h2 className="text-sm font-semibold text-slate-100 whitespace-nowrap">
             الرقعة المتزامنة
@@ -268,7 +268,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
       <div className="p-4 flex items-stretch gap-3" dir="ltr">
         {/* Stockfish Evaluation Bar */}
         <div
-          className="w-7 rounded-md bg-slate-950 border border-slate-800 relative overflow-hidden flex flex-col justify-between shrink-0"
+          className="w-7 rounded-md bg-slate-950/65 border border-slate-700/60 relative overflow-hidden flex flex-col justify-between shrink-0"
           aria-label={`شريط تقييم Stockfish: ${analysis?.evaluationLabel ?? '0.00'}`}
         >
           <div
@@ -304,9 +304,9 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
               const isCheckedKing = checkSquare === sqName;
               const hasOwnPiece = Boolean(cell && cell.color === turn);
 
-              let bgClass = isLight ? 'bg-[#DCE0E6]' : 'bg-[#64748B]';
+              let bgClass = isLight ? 'bg-[#DCE0E6]/85' : 'bg-[#64748B]/75';
               if (isLast) {
-                bgClass = isLight ? 'bg-[#FDE68A]' : 'bg-[#CA8A04]/80';
+                bgClass = isLight ? 'bg-[#FDE68A]/90' : 'bg-[#CA8A04]/80';
               }
               if (isSelected) {
                 bgClass = 'bg-cyan-400/80';
@@ -450,7 +450,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
       </div>
 
       {/* Footer Recommendation & FEN bar */}
-      <div className="px-4 py-2.5 border-t border-slate-800 bg-[#0E131D] space-y-2">
+      <div className="px-4 py-2.5 border-t border-slate-700/50 bg-[#0E131D]/50 space-y-2">
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
             {isAnalyzing ? (

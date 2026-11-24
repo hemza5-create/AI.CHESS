@@ -96,8 +96,8 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
     chartH - Math.min(1, budgetMs / maxChartMs) * (chartH - 10) - 4;
 
   return (
-    <section className="border border-slate-800 bg-[#121722] rounded-xl overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-800">
+    <section className="border border-slate-700/50 bg-[#121722]/45 backdrop-blur-md rounded-xl overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-700/50">
         <div className="flex items-center gap-2">
           <Gauge className="w-4 h-4 text-cyan-400" />
           <h2 className="text-sm font-semibold text-slate-100">
@@ -127,7 +127,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                 {config.resolution}×{config.resolution} px
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#0B0E14] rounded-lg border border-slate-800">
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#0B0E14]/45 rounded-lg border border-slate-700/50">
               {RESOLUTIONS.map((res) => (
                 <button
                   key={res}
@@ -332,7 +332,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
             </span>
           </div>
 
-          <div className="bg-[#0B0E14] border border-slate-800 rounded-lg p-2.5">
+          <div className="bg-[#0B0E14]/45 border border-slate-700/50 rounded-lg p-2.5">
             <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full h-24 overflow-visible">
               {/* Budget limit dashed line */}
               <line
@@ -367,7 +367,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
           </div>
 
           {/* Pipeline stage timings */}
-          <div className="grid grid-cols-4 gap-2 text-center bg-[#0B0E14] border border-slate-800 rounded-lg p-2.5">
+          <div className="grid grid-cols-4 gap-2 text-center bg-[#0B0E14]/45 border border-slate-700/50 rounded-lg p-2.5">
             <div>
               <div className="text-[10px] text-slate-500">Capture</div>
               <div className="text-xs font-mono text-slate-200 tabular-nums" dir="ltr">
@@ -407,7 +407,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
           <div
             dir="ltr"
-            className="grid grid-cols-8 gap-0.5 p-1.5 bg-[#0B0E14] border border-slate-800 rounded-lg aspect-square max-w-[200px] mx-auto w-full"
+            className="grid grid-cols-8 gap-0.5 p-1.5 bg-[#0B0E14]/45 border border-slate-700/50 rounded-lg aspect-square max-w-[200px] mx-auto w-full"
           >
             {squareMetrics
               ? squareMetrics.flat().map((sq) => {

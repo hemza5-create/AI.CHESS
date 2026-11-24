@@ -1,0 +1,8 @@
+{
+  "appId": "com.hemza.aichess",
+  "appName": "AI Chess",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

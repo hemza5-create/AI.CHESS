@@ -134,10 +134,10 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
   });
 
   return (
-    <section className="flex flex-col border border-slate-800 bg-[#121722] rounded-xl overflow-hidden">
+    <section className="flex flex-col border border-slate-700/50 bg-[#121722]/45 backdrop-blur-md rounded-xl overflow-hidden">
       {/* Source & Stream Controls Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-800">
-        <div className="flex items-center gap-1 p-1 bg-[#0B0E14] rounded-lg border border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-700/50">
+        <div className="flex items-center gap-1 p-1 bg-[#0B0E14]/50 rounded-lg border border-slate-700/60">
           <button
             type="button"
             onClick={() => onSelectSource('virtual')}
@@ -226,7 +226,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
       </div>
 
       {/* Vision Pipeline Layer Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-[#0E131D] border-b border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-[#0E131D]/45 border-b border-slate-700/50">
         <div className="flex items-center gap-1">
           {(
             [
@@ -314,8 +314,17 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
         )}
 
         {(errorMsg || scanError) && (
-          <div className="mb-3 px-3 py-2 rounded-md border border-rose-500/40 bg-rose-950/30 text-xs text-rose-200">
-            {scanError ?? errorMsg}
+          <div className="mb-3 px-3 py-2 rounded-md border border-rose-500/40 bg-rose-950/30 text-xs text-rose-200 flex flex-wrap items-center justify-between gap-2">
+            <span>{scanError ?? errorMsg}</span>
+            {errorMsg && (source === 'camera' || source === 'screen') && (
+              <button
+                type="button"
+                onClick={() => void onSelectSource(source)}
+                className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-100 font-medium whitespace-nowrap shrink-0"
+              >
+                إعادة المحاولة
+              </button>
+            )}
           </div>
         )}
 
@@ -325,7 +334,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           onPointerMove={handlePointerMoveStage}
           onPointerUp={handlePointerUpStage}
           onPointerLeave={handlePointerUpStage}
-          className="relative w-full aspect-square max-w-[520px] mx-auto bg-[#070A10] border border-slate-800 rounded-lg overflow-hidden select-none"
+          className="relative w-full aspect-square max-w-[520px] mx-auto bg-[#070A10]/55 border border-slate-700/60 rounded-lg overflow-hidden select-none"
         >
           {/* Underlying raw video element (camera/screen) */}
           <video
@@ -334,11 +343,26 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             muted
             autoPlay
             className={`absolute inset-0 w-full h-full object-contain ${
-              (source === 'camera' || source === 'screen') && viewMode === 'original'
+              (source === 'camera' || source === 'screen') && isStreaming && viewMode === 'original'
                 ? 'opacity-100'
-                : 'opacity-0 pointer-events-none'
+                : 'hidden'
             }`}
           />
+
+          {(source === 'camera' || source === 'screen') && !isStreaming && viewMode === 'original' && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6 text-slate-400">
+              {source === 'camera' ? (
+                <Camera className="w-9 h-9 text-cyan-400/70" />
+              ) : (
+                <Monitor className="w-9 h-9 text-cyan-400/70" />
+              )}
+              <span className="text-xs font-medium text-slate-300">
+                {source === 'camera'
+                  ? 'بث الكاميرا متوقف حالياً'
+                  : 'مشاركة الشاشة متوقفة حالياً'}
+              </span>
+            </div>
+          )}
 
           {/* Underlying virtual chessboard stream canvas */}
           <canvas
