@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
-import { Copy, Check, Download, Trash2, Loader2, WifiOff } from 'lucide-react';
+import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle } from 'lucide-react';
 import { LiveVisionStage } from './components/LiveVisionStage.tsx';
 import { DigitalBoard } from './components/DigitalBoard.tsx';
 import { CapturePreviewPanel } from './components/CapturePreviewPanel.tsx';
 import { AnalysisAndVoicePanel } from './components/AnalysisAndVoicePanel.tsx';
 import { ResourceTradeoffConsole } from './components/ResourceTradeoffConsole.tsx';
-import { PWAInstallButton } from './components/PWAInstallButton.tsx';
+import { InteractiveCoachTab } from './components/InteractiveCoachTab.tsx';
+import {
+  PuzzlesTab,
+  SOLVED_PUZZLES_STORAGE_KEY,
+  CURRENT_PUZZLE_STORAGE_KEY,
+} from './components/PuzzlesTab.tsx';
 import { LanguageSwitcher } from './components/LanguageSwitcher.tsx';
 import { saveStoredLanguage, useLanguage } from './i18n/LanguageContext.tsx';
 import type { TranslationDictionary } from './i18n/translations.ts';
@@ -85,6 +90,7 @@ async function parseJsonResponse<T>(
 
 export default function App() {
   const { language, meta, t } = useLanguage();
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'analyzer' | 'coach' | 'puzzles'>('analyzer');
   const [source, setSource] = useState<CaptureSource>('virtual');
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<VisionViewMode>('original');
@@ -188,8 +194,6 @@ export default function App() {
   const [moveSoundEnabled, setMoveSoundEnabled] = useState<boolean>(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const autoSpeakPendingRef = useRef<boolean>(false);
-
-  const [copiedPython, setCopiedPython] = useState<boolean>(false);
 
   const stopMediaTracks = useCallback(() => {
     if (mediaStreamRef.current) {
@@ -1127,12 +1131,6 @@ export default function App() {
     }
   };
 
-  const handleCopyPython = () => {
-    navigator.clipboard.writeText(t.pythonSnippet);
-    setCopiedPython(true);
-    setTimeout(() => setCopiedPython(false), 1800);
-  };
-
   const handleClearAppCache = useCallback(async () => {
     setIsClearingCache(true);
     setCacheNotice(null);
@@ -1156,6 +1154,8 @@ export default function App() {
       }
 
       try {
+        const savedSolved = globalThis.localStorage?.getItem(SOLVED_PUZZLES_STORAGE_KEY);
+        const savedCurrentPuzzle = globalThis.localStorage?.getItem(CURRENT_PUZZLE_STORAGE_KEY);
         globalThis.localStorage?.clear();
         globalThis.sessionStorage?.clear();
         saveStoredLanguage(language);
@@ -1164,6 +1164,12 @@ export default function App() {
         }
         if (visionApiUrl) {
           saveVisionApiUrl(visionApiUrl);
+        }
+        if (savedSolved) {
+          globalThis.localStorage?.setItem(SOLVED_PUZZLES_STORAGE_KEY, savedSolved);
+        }
+        if (savedCurrentPuzzle) {
+          globalThis.localStorage?.setItem(CURRENT_PUZZLE_STORAGE_KEY, savedCurrentPuzzle);
         }
       } catch {
         // ignore restricted storage contexts
@@ -1226,13 +1232,13 @@ export default function App() {
         <img
           src="/assets/aistudio/FB_IMG_1795486450572_eb120a57.jpg"
           alt=""
-          className="w-full h-full object-cover object-center opacity-75"
+          className="w-full h-full object-cover object-center opacity-95"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0E14]/55 via-[#0B0E14]/35 to-[#0B0E14]/65" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0E14]/30 via-[#0B0E14]/15 to-[#0B0E14]/40" />
       </div>
 
       {/* Top Bar Contract: Single Row, 3 Zones */}
-      <header className="sticky top-0 z-40 bg-[#0B0E14]/70 backdrop-blur-md border-b border-slate-500/45">
+      <header className="sticky top-0 z-40 bg-[#0B0E14]/35 backdrop-blur-sm border-b border-slate-400/35">
         <div className="max-w-[1440px] mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3 sm:gap-8">
           {/* Zone 1: Single-line Brand Title */}
           <a
@@ -1251,27 +1257,24 @@ export default function App() {
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-200">
             <a
               href="#vision-stage"
+              onClick={() => setActiveWorkspaceTab('analyzer')}
               className="hover:text-white transition-colors whitespace-nowrap shrink-0"
             >
               {t.navVision}
             </a>
             <a
               href="#board-stage"
+              onClick={() => setActiveWorkspaceTab('analyzer')}
               className="hover:text-white transition-colors whitespace-nowrap shrink-0"
             >
               {t.navBoard}
             </a>
             <a
               href="#profiler-stage"
+              onClick={() => setActiveWorkspaceTab('analyzer')}
               className="hover:text-white transition-colors whitespace-nowrap shrink-0"
             >
               {t.navProfiler}
-            </a>
-            <a
-              href="#architecture-reference"
-              className="hover:text-white transition-colors whitespace-nowrap shrink-0"
-            >
-              {t.navReference}
             </a>
           </nav>
 
@@ -1295,7 +1298,7 @@ export default function App() {
       {/* Main Workspace Container */}
       <main className="relative z-10 flex-1 max-w-[1440px] w-full mx-auto px-2.5 sm:px-6 py-3.5 sm:py-6 space-y-4 sm:space-y-6">
         {/* Intro Strip (Compact, direct functional overview + Workspace Controls) */}
-        <section className="relative z-20 flex flex-wrap items-end justify-between gap-3 sm:gap-4 p-3 sm:p-5 rounded-xl border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md shadow-lg">
+        <section className="relative z-20 flex flex-wrap items-end justify-between gap-3 sm:gap-4 p-3 sm:p-5 rounded-xl border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm shadow-lg">
           <div className="max-w-2xl">
             <h1 className="text-lg sm:text-3xl font-bold text-white leading-snug text-balance">
               {t.heroTitle}
@@ -1323,7 +1326,6 @@ export default function App() {
               {t.depthShort} {searchDepth}
             </span>
             <LanguageSwitcher />
-            <PWAInstallButton />
             <button
               type="button"
               onClick={() => void handleClearAppCache()}
@@ -1346,6 +1348,57 @@ export default function App() {
           </div>
         </section>
 
+        {/* Workspace Mode Tabs: Board & Vision | Interactive Coach | Solve Puzzles */}
+        <nav
+          aria-label={t.tabAnalyzer}
+          className="flex flex-wrap items-center gap-1.5 sm:gap-2.5 p-1.5 rounded-xl border border-slate-400/40 bg-[#0F1522]/30 backdrop-blur-sm shadow-md"
+        >
+          <button
+            type="button"
+            onClick={() => setActiveWorkspaceTab('analyzer')}
+            className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
+              activeWorkspaceTab === 'analyzer'
+                ? 'bg-cyan-400 text-slate-950 shadow-sm'
+                : 'text-slate-100 hover:bg-slate-800/80'
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span>{t.tabAnalyzer}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveWorkspaceTab('coach')}
+            className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
+              activeWorkspaceTab === 'coach'
+                ? 'bg-cyan-400 text-slate-950 shadow-sm'
+                : 'text-slate-100 hover:bg-slate-800/80'
+            }`}
+          >
+            <GraduationCap className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span>{t.tabCoach}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveWorkspaceTab('puzzles')}
+            className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
+              activeWorkspaceTab === 'puzzles'
+                ? 'bg-cyan-400 text-slate-950 shadow-sm'
+                : 'text-slate-100 hover:bg-slate-800/80'
+            }`}
+          >
+            <Puzzle className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span>{t.tabPuzzles}</span>
+          </button>
+        </nav>
+
+        {activeWorkspaceTab === 'coach' && <InteractiveCoachTab />}
+
+        {activeWorkspaceTab === 'puzzles' && <PuzzlesTab />}
+
+        {activeWorkspaceTab === 'analyzer' && (
+          <>
         {/* Primary 3-Zone Workspace Grid */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-3.5 sm:gap-5 items-start">
           {/* Column 1: Live OpenCV Vision Capture Stage */}
@@ -1556,95 +1609,8 @@ export default function App() {
             onToggleAutoDepthByElo={() => setAutoDepthByElo((v) => !v)}
           />
         </div>
-
-        {/* Architecture & Python Reference Implementation */}
-        <section
-          id="architecture-reference"
-          className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
-            <h2 className="text-sm sm:text-base font-bold text-white">
-              {t.archTitle}
-            </h2>
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              <a
-                href="/api/download/app.zip"
-                download="chess-vision-uci-app.zip"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-md transition-colors whitespace-nowrap shrink-0"
-              >
-                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span>{t.downloadZipBtn}</span>
-              </a>
-              <button
-                type="button"
-                onClick={handleCopyPython}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/75 hover:bg-slate-800 border border-slate-500/70 rounded-md transition-colors whitespace-nowrap shrink-0"
-              >
-                {copiedPython ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-300" />
-                    <span>{t.copiedBtn}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span>{t.copyPythonBtn}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="p-3 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
-            <div className="lg:col-span-5 space-y-3 sm:space-y-4 text-xs sm:text-base text-slate-100 leading-relaxed">
-              <div>
-                <h3 className="font-bold text-white mb-1">
-                  {t.archStep1Title}
-                </h3>
-                <p className="text-slate-100">
-                  {t.archStep1DescBefore}
-                  <span className="font-mono font-semibold text-cyan-200">GaussianBlur</span>
-                  {t.archStep1DescMid}
-                  <span className="font-mono font-semibold text-cyan-200">Canny</span>
-                  {t.archStep1DescAfter}
-                </p>
-              </div>
-              <div>
-                <h3 className="font-bold text-white mb-1">
-                  {t.archStep2Title}
-                </h3>
-                <p className="text-slate-100">
-                  {t.archStep2DescBefore}
-                  <span className="font-mono font-semibold text-cyan-200">chess.Board</span>
-                  {t.archStep2DescAfter}
-                </p>
-              </div>
-              <div>
-                <h3 className="font-bold text-white mb-1">
-                  {t.archStep3Title}
-                </h3>
-                <p className="text-slate-100">
-                  {t.archStep3DescBefore}
-                  <span className="font-mono font-semibold text-cyan-200">256px</span>
-                  {t.archStep3DescMid1}
-                  <span className="font-mono font-semibold text-cyan-200">800px</span>
-                  {t.archStep3DescMid2}
-                  <span className="font-mono font-semibold text-cyan-200">1000 / FPS</span>
-                  {t.archStep3DescAfter}
-                </p>
-              </div>
-            </div>
-
-            <div className="lg:col-span-7">
-              <pre
-                dir="ltr"
-                className="p-4 rounded-lg bg-[#060910]/85 border border-slate-500/55 text-xs sm:text-sm font-mono text-white overflow-x-auto leading-relaxed"
-              >
-                <code>{t.pythonSnippet}</code>
-              </pre>
-            </div>
-          </div>
-        </section>
+          </>
+        )}
       </main>
 
       {!isOnline && (

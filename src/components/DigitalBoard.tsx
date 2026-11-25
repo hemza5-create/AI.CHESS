@@ -192,10 +192,19 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
     return { from, to, ...poly };
   }, [showBestArrow, analysis?.ponder, orientation]);
 
+  const orderedFiles = useMemo(
+    () => (orientation === 'white' ? FILES : [...FILES].reverse()),
+    [orientation]
+  );
+  const orderedRanks = useMemo(
+    () => (orientation === 'white' ? RANKS : [...RANKS].reverse()),
+    [orientation]
+  );
+
   return (
-    <section className="flex flex-col border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
+    <section className="flex flex-col border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm rounded-xl overflow-hidden shadow-lg">
       {/* Header strip */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-400/35 bg-[#0B0E14]/20">
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
           <h2 className="text-sm sm:text-base font-bold text-white whitespace-nowrap">
             {t.syncBoardTitle}
@@ -228,8 +237,8 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
             title={t.arrowTooltip}
             className={`inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
               showBestArrow
-                ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/60'
-                : 'text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60'
+                ? 'bg-emerald-500/25 text-emerald-100 border border-emerald-400/60'
+                : 'text-white bg-slate-900/35 hover:bg-slate-800/65 border border-slate-400/45'
             }`}
           >
             <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -239,7 +248,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
             type="button"
             onClick={onFlipOrientation}
             title={t.flipTooltip}
-            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/35 hover:bg-slate-800/65 border border-slate-400/45 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
             <ArrowUpDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.flipBtn}</span>
@@ -249,7 +258,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
             onClick={onUndoMove}
             disabled={!canUndo}
             title={t.undoTooltip}
-            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/35 hover:bg-slate-800/65 border border-slate-400/45 disabled:opacity-40 disabled:pointer-events-none rounded-md transition-colors whitespace-nowrap shrink-0"
           >
             <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.undoBtn}</span>
@@ -258,7 +267,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
             type="button"
             onClick={onResetBoard}
             title={t.resetTooltip}
-            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/55 hover:bg-slate-800 border border-slate-600/60 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/35 hover:bg-slate-800/65 border border-slate-400/45 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
             <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.resetBtn}</span>
@@ -270,7 +279,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
       <div className="p-2.5 sm:p-4 flex items-stretch justify-center gap-2 sm:gap-3" dir="ltr">
         {/* Stockfish Evaluation Bar */}
         <div
-          className="w-5 sm:w-8 rounded-md bg-slate-950/65 border border-slate-500/60 relative overflow-hidden flex flex-col justify-between shrink-0"
+          className="w-5 sm:w-8 rounded-md bg-slate-950/35 border border-slate-400/45 relative overflow-hidden flex flex-col justify-between shrink-0"
           aria-label={t.evalBarAria(analysis?.evaluationLabel ?? '0.00')}
         >
           <div
@@ -288,69 +297,75 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
           </span>
         </div>
 
-        {/* 8x8 Chessboard */}
-        <div className="relative flex-1 aspect-square max-w-[310px] sm:max-w-[520px] border border-slate-700 rounded-md overflow-hidden select-none">
-          <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
-            {Array.from({ length: 64 }).map((_, idx) => {
-              const r = Math.floor(idx / 8);
-              const c = idx % 8;
-              const boardRow = orientation === 'white' ? r : 7 - r;
-              const boardCol = orientation === 'white' ? c : 7 - c;
-              const sqName = `${FILES[boardCol]}${RANKS[boardRow]}`;
-              const isLight = (boardRow + boardCol) % 2 === 0;
-              const cell = boardGrid[boardRow][boardCol];
-              const isLast =
-                lastMove && (lastMove.from === sqName || lastMove.to === sqName);
-              const isSelected = selectedSquare === sqName;
-              const isLegalTarget = legalTargets.has(sqName);
-              const isCheckedKing = checkSquare === sqName;
-              const hasOwnPiece = Boolean(cell && cell.color === turn);
-
-              let bgClass = isLight ? 'bg-[#F0F4EE]/60' : 'bg-[#4D8B55]/65';
-              if (isLast) {
-                bgClass = isLight ? 'bg-amber-200/70' : 'bg-amber-500/65';
-              }
-              if (isSelected) {
-                bgClass = 'bg-cyan-400/65';
-              }
-              if (isCheckedKing) {
-                bgClass = 'bg-rose-600/75';
-              }
-
-              const pieceCode = cell
-                ? (`${cell.color}${cell.type.toUpperCase()}` as PieceCode)
-                : null;
-
-              return (
-                <button
-                  key={sqName}
-                  type="button"
-                  onClick={() => handleSquareClick(sqName, hasOwnPiece)}
-                  aria-label={t.squareAria(sqName)}
-                  className={`relative flex items-center justify-center p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${bgClass} ${
-                    hasOwnPiece || isLegalTarget ? 'cursor-pointer' : 'cursor-default'
-                  }`}
+        {/* 8x8 Chessboard surrounded by rank/file coordinates on all 4 sides */}
+        <div className="flex-1 max-w-[348px] sm:max-w-[564px] select-none">
+          <div className="grid grid-cols-[18px_1fr_18px] sm:grid-cols-[22px_1fr_22px] grid-rows-[18px_1fr_18px] sm:grid-rows-[22px_1fr_22px] bg-[#0B101B]/40 backdrop-blur-sm border border-slate-400/45 rounded-lg p-0.5 shadow-inner">
+            <div aria-hidden="true" />
+            <div className="grid grid-cols-8 items-center">
+              {orderedFiles.map((file) => (
+                <span
+                  key={`top-${file}`}
+                  className="text-center text-[10px] sm:text-xs font-mono font-bold text-white leading-none"
                 >
-                  {/* Rank label on left edge */}
-                  {c === 0 && (
-                    <span
-                      className={`absolute top-0.5 left-0.5 sm:left-1 text-[9px] sm:text-[11px] font-mono font-bold leading-none drop-shadow ${
-                        isLight ? 'text-[#1F4724]' : 'text-white'
+                  {file}
+                </span>
+              ))}
+            </div>
+            <div aria-hidden="true" />
+
+            <div className="grid grid-rows-8 items-center">
+              {orderedRanks.map((rank) => (
+                <span
+                  key={`left-${rank}`}
+                  className="text-center text-[10px] sm:text-xs font-mono font-bold text-white leading-none"
+                >
+                  {rank}
+                </span>
+              ))}
+            </div>
+
+            <div className="relative aspect-square w-full border border-slate-700 rounded-sm overflow-hidden">
+              <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
+                {Array.from({ length: 64 }).map((_, idx) => {
+                  const r = Math.floor(idx / 8);
+                  const c = idx % 8;
+                  const boardRow = orientation === 'white' ? r : 7 - r;
+                  const boardCol = orientation === 'white' ? c : 7 - c;
+                  const sqName = `${FILES[boardCol]}${RANKS[boardRow]}`;
+                  const isLight = (boardRow + boardCol) % 2 === 0;
+                  const cell = boardGrid[boardRow][boardCol];
+                  const isLast =
+                    lastMove && (lastMove.from === sqName || lastMove.to === sqName);
+                  const isSelected = selectedSquare === sqName;
+                  const isLegalTarget = legalTargets.has(sqName);
+                  const isCheckedKing = checkSquare === sqName;
+                  const hasOwnPiece = Boolean(cell && cell.color === turn);
+
+                  let bgClass = isLight ? 'bg-[#F0F4EE]/60' : 'bg-[#4D8B55]/65';
+                  if (isLast) {
+                    bgClass = isLight ? 'bg-amber-200/70' : 'bg-amber-500/65';
+                  }
+                  if (isSelected) {
+                    bgClass = 'bg-cyan-400/65';
+                  }
+                  if (isCheckedKing) {
+                    bgClass = 'bg-rose-600/75';
+                  }
+
+                  const pieceCode = cell
+                    ? (`${cell.color}${cell.type.toUpperCase()}` as PieceCode)
+                    : null;
+
+                  return (
+                    <button
+                      key={sqName}
+                      type="button"
+                      onClick={() => handleSquareClick(sqName, hasOwnPiece)}
+                      aria-label={t.squareAria(sqName)}
+                      className={`relative flex items-center justify-center p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${bgClass} ${
+                        hasOwnPiece || isLegalTarget ? 'cursor-pointer' : 'cursor-default'
                       }`}
                     >
-                      {RANKS[boardRow]}
-                    </span>
-                  )}
-                  {/* File label on bottom edge */}
-                  {r === 7 && (
-                    <span
-                      className={`absolute bottom-0.5 right-0.5 sm:right-1 text-[9px] sm:text-[11px] font-mono font-bold leading-none drop-shadow ${
-                        isLight ? 'text-[#1F4724]' : 'text-white'
-                      }`}
-                    >
-                      {FILES[boardCol]}
-                    </span>
-                  )}
 
                   {pieceCode && (
                     <ChessPieceSvg
@@ -396,65 +411,91 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
                     <span className="absolute inset-1 rounded-full border-[3px] border-cyan-500/75 pointer-events-none" />
                   )}
                 </button>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
 
-          {/* Best Move & Ponder Vector Arrow Overlay (above pieces z-30) */}
-          {(bestArrow || ponderArrow) && (
-            <svg
-              viewBox="0 0 100 100"
-              className="absolute inset-0 w-full h-full pointer-events-none z-30"
-              aria-hidden="true"
-            >
-              {ponderArrow && (
-                <polygon
-                  points={ponderArrow.points}
-                  fill="#06B6D4"
-                  fillOpacity="0.45"
-                  stroke="#083344"
-                  strokeWidth="0.35"
-                />
-              )}
-
-              {bestArrow && (
-                <motion.g
-                  key={bestArrow.moveKey}
-                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  style={{ transformOrigin: `${bestArrow.from.x}% ${bestArrow.from.y}%` }}
+              {/* Best Move & Ponder Vector Arrow Overlay (above pieces z-30) */}
+              {(bestArrow || ponderArrow) && (
+                <svg
+                  viewBox="0 0 100 100"
+                  className="absolute inset-0 w-full h-full pointer-events-none z-30"
+                  aria-hidden="true"
                 >
-                  {/* Subtle destination ring for precision targeting */}
-                  <circle
-                    cx={bestArrow.to.x}
-                    cy={bestArrow.to.y}
-                    r="4.8"
-                    fill="none"
-                    stroke="#10B981"
-                    strokeOpacity="0.45"
-                    strokeWidth="0.7"
-                  />
-                  {/* Primary Stockfish Best Move Polygon Arrow */}
-                  <polygon
-                    points={bestArrow.points}
-                    fill="#10B981"
-                    fillOpacity="0.88"
-                    stroke="#022C22"
-                    strokeWidth="0.45"
-                    strokeLinejoin="round"
-                  />
-                </motion.g>
+                  {ponderArrow && (
+                    <polygon
+                      points={ponderArrow.points}
+                      fill="#06B6D4"
+                      fillOpacity="0.45"
+                      stroke="#083344"
+                      strokeWidth="0.35"
+                    />
+                  )}
+
+                  {bestArrow && (
+                    <motion.g
+                      key={bestArrow.moveKey}
+                      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                      style={{ transformOrigin: `${bestArrow.from.x}% ${bestArrow.from.y}%` }}
+                    >
+                      {/* Subtle destination ring for precision targeting */}
+                      <circle
+                        cx={bestArrow.to.x}
+                        cy={bestArrow.to.y}
+                        r="4.8"
+                        fill="none"
+                        stroke="#10B981"
+                        strokeOpacity="0.45"
+                        strokeWidth="0.7"
+                      />
+                      {/* Primary Stockfish Best Move Polygon Arrow */}
+                      <polygon
+                        points={bestArrow.points}
+                        fill="#10B981"
+                        fillOpacity="0.88"
+                        stroke="#022C22"
+                        strokeWidth="0.45"
+                        strokeLinejoin="round"
+                      />
+                    </motion.g>
+                  )}
+                </svg>
               )}
-            </svg>
-          )}
+            </div>
+
+            <div className="grid grid-rows-8 items-center">
+              {orderedRanks.map((rank) => (
+                <span
+                  key={`right-${rank}`}
+                  className="text-center text-[10px] sm:text-xs font-mono font-bold text-white leading-none"
+                >
+                  {rank}
+                </span>
+              ))}
+            </div>
+
+            <div aria-hidden="true" />
+            <div className="grid grid-cols-8 items-center">
+              {orderedFiles.map((file) => (
+                <span
+                  key={`bottom-${file}`}
+                  className="text-center text-[10px] sm:text-xs font-mono font-bold text-white leading-none"
+                >
+                  {file}
+                </span>
+              ))}
+            </div>
+            <div aria-hidden="true" />
+          </div>
         </div>
       </div>
 
       {/* Footer Recommendation & FEN bar */}
-      <div className="px-3 sm:px-4 py-2 sm:py-3 border-t border-slate-500/45 bg-[#0A0F1A]/60 space-y-2">
+      <div className="px-3 sm:px-4 py-2 sm:py-3 border-t border-slate-400/35 bg-[#0A0F1A]/25 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-          <span className="text-[11px] sm:text-sm font-medium text-slate-100 whitespace-nowrap shrink-0">
+          <span className="text-[11px] sm:text-sm font-semibold text-white whitespace-nowrap shrink-0">
             {isAnalyzing ? (
               t.analyzingStockfish
             ) : analysis?.bestMoveSan ? (
@@ -471,7 +512,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <code
               dir="ltr"
-              className="text-[11px] sm:text-sm font-mono font-medium text-slate-100 truncate select-all"
+              className="text-[11px] sm:text-sm font-mono font-medium text-white truncate select-all"
               title={fen}
             >
               {fen}
@@ -480,7 +521,7 @@ export const DigitalBoard: React.FC<DigitalBoardProps> = ({
               type="button"
               onClick={() => setEditingFen((v) => !v)}
               title={t.editFenTooltip}
-              className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/75 hover:bg-slate-800 border border-slate-600/70 rounded transition-colors shrink-0"
+              className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/40 hover:bg-slate-800/70 border border-slate-400/50 rounded transition-colors shrink-0"
             >
               <Edit3 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-300" />
               <span>FEN</span>

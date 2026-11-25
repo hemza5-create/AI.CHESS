@@ -92,16 +92,20 @@ export function renderVirtualBoardToCanvas(
         }
       }
 
-      // Coordinate labels on frame
-      cCtx.fillStyle = '#94A3B8';
+      // Coordinate labels on all 4 sides of the frame
+      cCtx.fillStyle = '#CBD5E1';
       cCtx.font = `600 ${Math.max(10, Math.round(pad * 0.34))}px "IBM Plex Mono", monospace`;
       cCtx.textAlign = 'center';
       cCtx.textBaseline = 'middle';
       for (let i = 0; i < 8; i++) {
         const fileLabel = orientation === 'white' ? files[i] : files[7 - i];
         const rankLabel = orientation === 'white' ? ranks[i] : ranks[7 - i];
-        cCtx.fillText(fileLabel, pad + i * sqSize + sqSize / 2, size - pad / 2 + 2);
-        cCtx.fillText(rankLabel, pad / 2 - 2, pad + i * sqSize + sqSize / 2);
+        const fileX = pad + i * sqSize + sqSize / 2;
+        const rankY = pad + i * sqSize + sqSize / 2;
+        cCtx.fillText(fileLabel, fileX, pad / 2 - 2);
+        cCtx.fillText(fileLabel, fileX, size - pad / 2 + 2);
+        cCtx.fillText(rankLabel, pad / 2 - 2, rankY);
+        cCtx.fillText(rankLabel, size - pad / 2 + 2, rankY);
       }
 
       cachedBoardKey = cacheKey;

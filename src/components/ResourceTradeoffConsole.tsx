@@ -92,8 +92,8 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
     chartH - Math.min(1, budgetMs / maxChartMs) * (chartH - 10) - 4;
 
   return (
-    <section className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
-      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+    <section className="border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm rounded-xl overflow-hidden shadow-lg">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 py-2.5 sm:py-3.5 border-b border-slate-400/35 bg-[#0B0E14]/20">
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Gauge className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300" />
           <h2 className="text-sm sm:text-base font-bold text-white">
@@ -123,7 +123,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                 {config.resolution}×{config.resolution} px
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1 sm:gap-1.5 p-1 bg-[#070B12]/65 rounded-lg border border-slate-500/50">
+            <div className="grid grid-cols-3 gap-1 sm:gap-1.5 p-1 bg-[#070B12]/30 rounded-lg border border-slate-400/40">
               {RESOLUTIONS.map((res) => (
                 <button
                   key={res}
@@ -170,7 +170,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                   className={`py-1 sm:py-1.5 text-[11px] sm:text-xs font-mono font-semibold rounded border transition-colors ${
                     config.targetFps === fpsPreset
                       ? 'bg-cyan-500/25 border-cyan-400/70 text-cyan-200 font-bold'
-                      : 'bg-[#070B12]/65 border-slate-500/60 text-slate-100 hover:text-white'
+                      : 'bg-[#070B12]/30 border-slate-400/45 text-white hover:bg-slate-800/60'
                   }`}
                 >
                   {fpsPreset} FPS
@@ -296,7 +296,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
                   className={`py-1 sm:py-1.5 px-1.5 sm:px-2 text-[11px] sm:text-xs font-semibold rounded border transition-colors whitespace-nowrap ${
                     Math.abs(playerElo - preset.elo) < 25
                       ? 'bg-cyan-500/25 border-cyan-400/70 text-cyan-200 font-bold'
-                      : 'bg-[#070B12]/65 border-slate-500/60 text-slate-100 hover:text-white'
+                      : 'bg-[#070B12]/30 border-slate-400/45 text-white hover:bg-slate-800/60'
                   }`}
                 >
                   {preset.label}
@@ -328,7 +328,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
             </span>
           </div>
 
-          <div className="bg-[#070B12]/65 border border-slate-500/55 rounded-lg p-3">
+          <div className="bg-[#070B12]/30 border border-slate-400/45 rounded-lg p-3">
             <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full h-24 overflow-visible">
               {/* Budget limit dashed line */}
               <line
@@ -364,7 +364,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
           </div>
 
           {/* Pipeline stage timings */}
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2 text-center bg-[#070B12]/65 border border-slate-500/55 rounded-lg p-2 sm:p-3">
+          <div className="grid grid-cols-4 gap-1.5 sm:gap-2 text-center bg-[#070B12]/30 border border-slate-400/45 rounded-lg p-2 sm:p-3">
             <div>
               <div className="text-[10px] sm:text-xs font-medium text-slate-200">{t.stageCapture}</div>
               <div className="text-xs sm:text-sm font-mono font-bold text-white tabular-nums" dir="ltr">
@@ -404,7 +404,7 @@ export const ResourceTradeoffConsole: React.FC<ResourceTradeoffConsoleProps> = (
 
           <div
             dir="ltr"
-            className="grid grid-cols-8 gap-0.5 p-1 sm:p-1.5 bg-[#070B12]/65 border border-slate-500/55 rounded-lg aspect-square max-w-[176px] sm:max-w-[220px] mx-auto w-full"
+            className="grid grid-cols-8 gap-0.5 p-1 sm:p-1.5 bg-[#070B12]/30 border border-slate-400/45 rounded-lg aspect-square max-w-[176px] sm:max-w-[220px] mx-auto w-full"
           >
             {squareMetrics
               ? squareMetrics.flat().map((sq) => {

@@ -59,7 +59,7 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
   return (
     <section
       aria-label={t.capturePreviewBestMoveBtn}
-      className="border border-cyan-400/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl p-3 sm:p-4 shadow-lg space-y-2.5 sm:space-y-3"
+      className="border border-cyan-400/45 bg-[#0F1522]/25 backdrop-blur-sm rounded-xl p-3 sm:p-4 shadow-lg space-y-2.5 sm:space-y-3"
     >
       {scanError && (
         <div className="px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-lg border border-rose-400/60 bg-rose-950/75 text-xs sm:text-sm font-medium text-rose-100">
@@ -93,7 +93,7 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
           className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2.5 text-[11px] sm:text-sm font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
             autoScanPieces
               ? 'border-cyan-400/70 bg-cyan-500/20 text-cyan-200'
-              : 'border-slate-500/70 bg-slate-900/65 text-slate-100 hover:text-white'
+              : 'border-slate-400/50 bg-slate-900/35 text-white hover:bg-slate-800/65'
           }`}
         >
           <Radio className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${autoScanPieces ? 'animate-pulse text-cyan-300' : ''}`} />
@@ -107,7 +107,7 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
           className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2.5 text-[11px] sm:text-sm font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
             opponentMoveOnly
               ? 'border-emerald-400/65 bg-emerald-500/20 text-emerald-200'
-              : 'border-slate-500/70 bg-slate-900/65 text-slate-100 hover:text-white'
+              : 'border-slate-400/50 bg-slate-900/35 text-white hover:bg-slate-800/65'
           }`}
         >
           <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -116,10 +116,10 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
       </div>
 
       {/* External Vision API Endpoint Bar */}
-      <div className="rounded-lg border border-slate-600/50 bg-[#070B12]/60 px-2.5 py-1.5 sm:px-3 sm:py-2 space-y-2">
+      <div className="rounded-lg border border-slate-400/40 bg-[#070B12]/30 px-2.5 py-1.5 sm:px-3 sm:py-2 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] sm:text-xs">
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <span className="text-slate-300 font-medium shrink-0">{t.activeEndpointLabel}</span>
+            <span className="text-slate-100 font-medium shrink-0">{t.activeEndpointLabel}</span>
             <code
               dir="ltr"
               className="font-mono text-cyan-200 truncate"
@@ -194,8 +194,8 @@ export const CapturePreviewPanel: React.FC<CapturePreviewPanelProps> = ({
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] sm:text-sm">
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-          <span className="text-slate-100 font-semibold">{t.yourZoneLabel}</span>
-          <div className="inline-flex rounded-md border border-slate-500/60 bg-[#05080E]/80 p-0.5">
+          <span className="text-white font-semibold">{t.yourZoneLabel}</span>
+          <div className="inline-flex rounded-md border border-slate-400/50 bg-[#05080E]/40 p-0.5">
             <button
               type="button"
               onClick={() => onChangeOrientation('white')}

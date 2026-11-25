@@ -306,6 +306,88 @@ export interface TranslationDictionary {
   ) => string;
   aiScanGenericFailed: string;
   baselineCalibratedStatus: string;
+
+  // Workspace Tabs
+  tabAnalyzer: string;
+  tabCoach: string;
+  tabPuzzles: string;
+
+  // Interactive Coach
+  coachTitle: string;
+  coachSubtitle: string;
+  coachAllTactics: string;
+  coachTactics: Record<'fork' | 'pin' | 'discovered' | 'mateIn1' | 'backRank', string>;
+  coachHintBtn: string;
+  coachPlayBestBtn: string;
+  coachResetBtn: string;
+  coachFlipBtn: string;
+  coachGoalLabel: string;
+  coachFeedbackTitle: string;
+  coachEvalTitle: string;
+  coachStatusReady: string;
+  coachStatusCorrect: string;
+  coachStatusWrong: string;
+  coachStatusSolvedByCoach: string;
+  coachPlayedMoveLabel: (san: string) => string;
+  coachBetterMoveLabel: (san: string) => string;
+  coachNextDrillBtn: string;
+  coachDrillProgress: (index: number, total: number) => string;
+  coachAnalyzingEval: string;
+  coachStockfishBestLabel: string;
+  coachWrongEvalNote: (playedSan: string, bestSan: string, evalAfter: string) => string;
+
+  // 1,000 Chess Puzzles
+  puzzlesTitle: string;
+  puzzlesSubtitle: string;
+  puzzlesSolvedCountLabel: (solved: number, total: number) => string;
+  puzzlesSolvedBadge: string;
+  puzzlesDifficultyAll: string;
+  puzzlesDifficultyLabels: Record<'beginner' | 'intermediate' | 'advanced', string>;
+  puzzlesThemeLabels: Record<
+    'mateIn1' | 'backRank' | 'fork' | 'pin' | 'discovered' | 'skewer' | 'sacrifice' | 'mateIn2' | 'deflection',
+    string
+  >;
+  puzzlesPrevBtn: string;
+  puzzlesNextBtn: string;
+  puzzlesRandomBtn: string;
+  puzzlesJumpPlaceholder: string;
+  puzzlesJumpBtn: string;
+  puzzlesHintBtn: string;
+  puzzlesResetBtn: string;
+  puzzlesFlipBtn: string;
+  puzzlesNumberLabel: (id: number, total: number) => string;
+  puzzlesRatingLabel: (rating: number) => string;
+  puzzlesTurnWhite: string;
+  puzzlesTurnBlack: string;
+  puzzlesStatusPrompt: string;
+  puzzlesStatusOpponentReply: string;
+  puzzlesStatusCorrectContinue: string;
+  puzzlesStatusSolved: string;
+  puzzlesStatusWrong: string;
+  puzzlesHintActiveLabel: (from: string, to: string) => string;
+
+  // Coach Play vs Stockfish
+  coachModeTactics: string;
+  coachModePlayAi: string;
+  playAiTitle: string;
+  playAiSubtitle: string;
+  playAiDifficultyLabel: string;
+  playAiLevels: Record<'weak' | 'beginner' | 'intermediate' | 'advanced' | 'master', string>;
+  playAiLevelSubtitles: Record<'weak' | 'beginner' | 'intermediate' | 'advanced' | 'master', string>;
+  playAiSideLabel: string;
+  playAiNewBoardBtn: string;
+  playAiUndoBtn: string;
+  coachBestArrowBtn: string;
+  playAiYourTurn: (sideName: string) => string;
+  playAiThinking: string;
+  playAiGameOverLabel: string;
+  playAiPlayAgainBtn: string;
+  playAiMovesTitle: string;
+  playAiEmptyMoves: string;
+  playAiCoachTipTitle: string;
+  playAiHintMessage: (san: string, from: string, to: string) => string;
+  playAiDefaultTip: string;
+  playAiLastAiMove: (san: string) => string;
 }
 
 export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
@@ -601,6 +683,115 @@ def analyze_and_explain(uci_move):
       `تمت القراءة · ${perspective}${opponentSan ? ` · نقلة الخصم: ${opponentSan}` : ''} · الدور: ${turnName}`,
     aiScanGenericFailed: 'فشلت قراءة الوضعية بالذكاء الاصطناعي.',
     baselineCalibratedStatus: 'تمت معايرة الإطار المرجعي',
+
+    tabAnalyzer: 'الرقعة والرصد',
+    tabCoach: 'المدرب',
+    tabPuzzles: 'حل الألغاز',
+
+    coachTitle: 'المدرب التفاعلي للتكتيكات',
+    coachSubtitle: 'تدرّب على الشوكة والربط وكشف الهجوم ومات في نقلة ومات الصف الأخير مع تقييم Stockfish الفوري.',
+    coachAllTactics: 'الكل',
+    coachTactics: {
+      fork: 'شوكة',
+      pin: 'ربط',
+      discovered: 'كشف هجوم',
+      mateIn1: 'مات في نقلة واحدة',
+      backRank: 'مات الصف الأخير',
+    },
+    coachHintBtn: 'تلميح المدرب',
+    coachPlayBestBtn: 'نفّذ أفضل نقلة',
+    coachResetBtn: 'إعادة الوضع',
+    coachFlipBtn: 'قلب الرقعة',
+    coachGoalLabel: 'المطلوب في هذا التمرين:',
+    coachFeedbackTitle: 'شرح المدرب والتقييم',
+    coachEvalTitle: 'تقييم Stockfish للموقف',
+    coachStatusReady: 'اختر القطعة وحرّكها لتنفيذ التكتيك المطلوب.',
+    coachStatusCorrect: 'نقلة صحيحة وموفقة!',
+    coachStatusWrong: 'نقلة غير دقيقة — جرب مرة أخرى أو اطلب تلميح المدرب.',
+    coachStatusSolvedByCoach: 'تم تنفيذ أفضل نقلة بواسطة المدرب',
+    coachPlayedMoveLabel: (san) => `نقلتك: ${san}`,
+    coachBetterMoveLabel: (san) => `أفضل نقلة: ${san}`,
+    coachNextDrillBtn: 'التمرين التالي',
+    coachDrillProgress: (index, total) => `تمرين ${index} / ${total}`,
+    coachAnalyzingEval: 'جاري تقييم الموقف محلياً...',
+    coachStockfishBestLabel: 'ترشيح Stockfish:',
+    coachWrongEvalNote: (playedSan, bestSan, evalAfter) =>
+      `لعبتَ ${playedSan} (التقييم بعد النقلة: ${evalAfter})، بينما النقلة الحاسمة هي ${bestSan} لأنها تحقق التفوق المباشر للتكتيك.`,
+
+    puzzlesTitle: 'قسم حل الألغاز (1,000 لغز شطرنج)',
+    puzzlesSubtitle: 'ألغاز متدرجة الصعوبة (مبتدئ، متوسط، متقدم) مع حفظ تلقائي لعدد الألغاز المحلولة.',
+    puzzlesSolvedCountLabel: (solved, total) => `المحلولة: ${solved} / ${total}`,
+    puzzlesSolvedBadge: 'تم الحل',
+    puzzlesDifficultyAll: 'الكل (1000)',
+    puzzlesDifficultyLabels: {
+      beginner: 'مبتدئ',
+      intermediate: 'متوسط',
+      advanced: 'متقدم',
+    },
+    puzzlesThemeLabels: {
+      mateIn1: 'مات في نقلة',
+      backRank: 'مات الصف الأخير',
+      fork: 'شوكة',
+      pin: 'ربط',
+      discovered: 'كشف هجوم',
+      skewer: 'سيخ تكتيكي',
+      sacrifice: 'تضحية حاسمة',
+      mateIn2: 'مات في نقلتين',
+      deflection: 'تشتيت المدافع',
+    },
+    puzzlesPrevBtn: 'السابق',
+    puzzlesNextBtn: 'التالي',
+    puzzlesRandomBtn: 'لغز عشوائي',
+    puzzlesJumpPlaceholder: '1 - 1000',
+    puzzlesJumpBtn: 'انتقال',
+    puzzlesHintBtn: 'تلميح',
+    puzzlesResetBtn: 'إعادة',
+    puzzlesFlipBtn: 'قلب الرقعة',
+    puzzlesNumberLabel: (id, total) => `لغز #${id} من ${total}`,
+    puzzlesRatingLabel: (rating) => `تصنيف ${rating}`,
+    puzzlesTurnWhite: 'الدور للأبيض — جد النقلة الأفضل',
+    puzzlesTurnBlack: 'الدور للأسود — جد النقلة الأفضل',
+    puzzlesStatusPrompt: 'حرّك القطعة لإيجاد الحل الأمثل.',
+    puzzlesStatusOpponentReply: 'جاري تنفيذ رد الخصم...',
+    puzzlesStatusCorrectContinue: 'ممتاز! أكمل النقلة التالية لإنهاء اللغز.',
+    puzzlesStatusSolved: 'أحسنت! تم حل اللغز وتسجيله بنجاح.',
+    puzzlesStatusWrong: 'ليست أفضل نقلة — حاول مجدداً أو استخدم زر «تلميح».',
+    puzzlesHintActiveLabel: (from, to) => `تلميح: حرّك من ${from} إلى ${to}`,
+
+    coachModeTactics: 'تدريب التكتيكات',
+    coachModePlayAi: 'اللعب ضد Stockfish',
+    playAiTitle: 'رقعة الشطرنج — اللعب ضد ذكاء Stockfish',
+    playAiSubtitle: 'أنشئ رقعة لعب كاملة واختر مستوى الخصم من مبتدئ حتى أستاذ مع تحليل التقييم الفوري.',
+    playAiDifficultyLabel: 'مستوى الذكاء الاصطناعي:',
+    playAiLevels: {
+      weak: 'ضعيف جداً',
+      beginner: 'مبتدئ',
+      intermediate: 'متوسط',
+      advanced: 'متقدم',
+      master: 'أستاذ',
+    },
+    playAiLevelSubtitles: {
+      weak: '500 Elo · عمق 1',
+      beginner: '1000 Elo · عمق 4',
+      intermediate: '1500 Elo · عمق 7',
+      advanced: '2000 Elo · عمق 11',
+      master: '2500 Elo · عمق 15',
+    },
+    playAiSideLabel: 'اللون الخاص بك:',
+    playAiNewBoardBtn: 'إنشاء رقعة جديدة',
+    playAiUndoBtn: 'تراجع',
+    coachBestArrowBtn: 'سهم أفضل نقلة',
+    playAiYourTurn: (sideName) => `دورك الآن (${sideName})`,
+    playAiThinking: 'Stockfish يفكّر في النقلة...',
+    playAiGameOverLabel: 'انتهت المباراة',
+    playAiPlayAgainBtn: 'العب مجدداً',
+    playAiMovesTitle: 'سجل نقلات المباراة',
+    playAiEmptyMoves: 'ابدأ بتحريك أي قطعة على الرقعة لبدء المباراة ضد Stockfish.',
+    playAiCoachTipTitle: 'تحليل المدرب أثناء اللعب',
+    playAiHintMessage: (san, from, to) =>
+      `تلميح المدرب: النقلة المقترحة هي ${san} (من ${from} إلى ${to}).`,
+    playAiDefaultTip: 'راقب شريط التقييم على جانب الرقعة أو اطلب «تلميح المدرب» في أي لحظة.',
+    playAiLastAiMove: (san) => `لعب Stockfish نقلة ${san}.`,
   },
 
   en: {
@@ -898,6 +1089,115 @@ def analyze_and_explain(uci_move):
       `Scanned · ${perspective}${opponentSan ? ` · Opponent: ${opponentSan}` : ''} · Turn: ${turnName}`,
     aiScanGenericFailed: 'AI board scan failed.',
     baselineCalibratedStatus: 'Baseline reference frame calibrated',
+
+    tabAnalyzer: 'Board & Vision',
+    tabCoach: 'Coach',
+    tabPuzzles: 'Solve Puzzles',
+
+    coachTitle: 'Interactive Tactics Coach',
+    coachSubtitle: 'Practice forks, pins, discovered attacks, mate in 1, and back-rank mates with instant Stockfish feedback.',
+    coachAllTactics: 'All',
+    coachTactics: {
+      fork: 'Fork',
+      pin: 'Pin',
+      discovered: 'Discovered Attack',
+      mateIn1: 'Mate in 1',
+      backRank: 'Back Rank Mate',
+    },
+    coachHintBtn: 'Coach Hint',
+    coachPlayBestBtn: 'Play Best Move',
+    coachResetBtn: 'Reset Position',
+    coachFlipBtn: 'Flip Board',
+    coachGoalLabel: 'Drill Objective:',
+    coachFeedbackTitle: 'Coach Explanation & Evaluation',
+    coachEvalTitle: 'Stockfish Position Evaluation',
+    coachStatusReady: 'Select and move a piece to execute the tactic.',
+    coachStatusCorrect: 'Correct tactical strike!',
+    coachStatusWrong: 'Suboptimal move — try again or ask for a Coach Hint.',
+    coachStatusSolvedByCoach: 'Best move demonstrated by Coach',
+    coachPlayedMoveLabel: (san) => `Your move: ${san}`,
+    coachBetterMoveLabel: (san) => `Best move: ${san}`,
+    coachNextDrillBtn: 'Next Drill',
+    coachDrillProgress: (index, total) => `Drill ${index} / ${total}`,
+    coachAnalyzingEval: 'Evaluating position locally...',
+    coachStockfishBestLabel: 'Stockfish Top:',
+    coachWrongEvalNote: (playedSan, bestSan, evalAfter) =>
+      `You played ${playedSan} (eval: ${evalAfter}), whereas ${bestSan} wins cleanly by executing the tactical motif immediately.`,
+
+    puzzlesTitle: 'Chess Puzzles Arena (1,000 Puzzles)',
+    puzzlesSubtitle: 'Graded puzzles (Beginner, Intermediate, Advanced) with automatic localStorage progress tracking.',
+    puzzlesSolvedCountLabel: (solved, total) => `Solved: ${solved} / ${total}`,
+    puzzlesSolvedBadge: 'Solved',
+    puzzlesDifficultyAll: 'All (1000)',
+    puzzlesDifficultyLabels: {
+      beginner: 'Beginner',
+      intermediate: 'Intermediate',
+      advanced: 'Advanced',
+    },
+    puzzlesThemeLabels: {
+      mateIn1: 'Mate in 1',
+      backRank: 'Back Rank Mate',
+      fork: 'Fork',
+      pin: 'Pin',
+      discovered: 'Discovered Attack',
+      skewer: 'Skewer',
+      sacrifice: 'Tactical Sacrifice',
+      mateIn2: 'Mate in 2',
+      deflection: 'Deflection',
+    },
+    puzzlesPrevBtn: 'Previous',
+    puzzlesNextBtn: 'Next',
+    puzzlesRandomBtn: 'Random Puzzle',
+    puzzlesJumpPlaceholder: '1 - 1000',
+    puzzlesJumpBtn: 'Go',
+    puzzlesHintBtn: 'Hint',
+    puzzlesResetBtn: 'Reset',
+    puzzlesFlipBtn: 'Flip Board',
+    puzzlesNumberLabel: (id, total) => `Puzzle #${id} of ${total}`,
+    puzzlesRatingLabel: (rating) => `Rating ${rating}`,
+    puzzlesTurnWhite: 'White to move — Find the best move',
+    puzzlesTurnBlack: 'Black to move — Find the best move',
+    puzzlesStatusPrompt: 'Move a piece on the board to solve the puzzle.',
+    puzzlesStatusOpponentReply: 'Playing opponent reply...',
+    puzzlesStatusCorrectContinue: 'Nice! Find the follow-up move to finish.',
+    puzzlesStatusSolved: 'Well done! Puzzle solved and saved.',
+    puzzlesStatusWrong: 'Not the best move — try again or tap Hint.',
+    puzzlesHintActiveLabel: (from, to) => `Hint: move ${from} → ${to}`,
+
+    coachModeTactics: 'Tactics Drills',
+    coachModePlayAi: 'Play vs Stockfish',
+    playAiTitle: 'Chessboard — Play vs Stockfish AI',
+    playAiSubtitle: 'Start a full chessboard match and select Beginner, Intermediate, Advanced, or Master strength.',
+    playAiDifficultyLabel: 'Stockfish AI Level:',
+    playAiLevels: {
+      weak: 'Novice',
+      beginner: 'Beginner',
+      intermediate: 'Intermediate',
+      advanced: 'Advanced',
+      master: 'Master',
+    },
+    playAiLevelSubtitles: {
+      weak: '500 Elo · Depth 1',
+      beginner: '1000 Elo · Depth 4',
+      intermediate: '1500 Elo · Depth 7',
+      advanced: '2000 Elo · Depth 11',
+      master: '2500 Elo · Depth 15',
+    },
+    playAiSideLabel: 'Your Color:',
+    playAiNewBoardBtn: 'New Chessboard',
+    playAiUndoBtn: 'Undo',
+    coachBestArrowBtn: 'Best Move Arrow',
+    playAiYourTurn: (sideName) => `Your turn (${sideName})`,
+    playAiThinking: 'Stockfish is thinking...',
+    playAiGameOverLabel: 'Game Over',
+    playAiPlayAgainBtn: 'Play Again',
+    playAiMovesTitle: 'Match Move History',
+    playAiEmptyMoves: 'Move any piece on the chessboard to begin playing against Stockfish.',
+    playAiCoachTipTitle: 'Live Coach Evaluation',
+    playAiHintMessage: (san, from, to) =>
+      `Coach Hint: Recommended move is ${san} (${from} → ${to}).`,
+    playAiDefaultTip: 'Watch the evaluation bar alongside the board or tap Coach Hint anytime.',
+    playAiLastAiMove: (san) => `Stockfish played ${san}.`,
   },
 
   ru: {
@@ -1195,6 +1495,115 @@ def analyze_and_explain(uci_move):
       `Считано · ${perspective}${opponentSan ? ` · Соперник: ${opponentSan}` : ''} · Ход: ${turnName}`,
     aiScanGenericFailed: 'Ошибка ИИ-распознавания доски.',
     baselineCalibratedStatus: 'Эталонный кадр откалиброван',
+
+    tabAnalyzer: 'Доска и зрение',
+    tabCoach: 'Тренер',
+    tabPuzzles: 'Задачи',
+
+    coachTitle: 'Интерактивный тактический тренер',
+    coachSubtitle: 'Тренируйте вилки, связки, вскрытые нападения, мат в 1 ход и мат по последней горизонтали с оценкой Stockfish.',
+    coachAllTactics: 'Все',
+    coachTactics: {
+      fork: 'Вилка',
+      pin: 'Связка',
+      discovered: 'Вскрытое нападение',
+      mateIn1: 'Мат в 1 ход',
+      backRank: 'Мат по 8-й линии',
+    },
+    coachHintBtn: 'Подсказка тренера',
+    coachPlayBestBtn: 'Сыграть лучший ход',
+    coachResetBtn: 'Сбросить позицию',
+    coachFlipBtn: 'Перевернуть доску',
+    coachGoalLabel: 'Цель упражнения:',
+    coachFeedbackTitle: 'Разбор и оценка тренера',
+    coachEvalTitle: 'Оценка позиции Stockfish',
+    coachStatusReady: 'Выберите фигуру и выполните нужный тактический приём.',
+    coachStatusCorrect: 'Точный тактический удар!',
+    coachStatusWrong: 'Неточный ход — попробуйте ещё раз или возьмите подсказку.',
+    coachStatusSolvedByCoach: 'Лучший ход показан тренером',
+    coachPlayedMoveLabel: (san) => `Ваш ход: ${san}`,
+    coachBetterMoveLabel: (san) => `Лучший ход: ${san}`,
+    coachNextDrillBtn: 'Следующее задание',
+    coachDrillProgress: (index, total) => `Задание ${index} / ${total}`,
+    coachAnalyzingEval: 'Локальная оценка позиции...',
+    coachStockfishBestLabel: 'Выбор Stockfish:',
+    coachWrongEvalNote: (playedSan, bestSan, evalAfter) =>
+      `Вы сыграли ${playedSan} (оценка: ${evalAfter}), тогда как ${bestSan} немедленно решает задачу с решающим преимуществом.`,
+
+    puzzlesTitle: 'Раздел шахматных задач (1 000 задач)',
+    puzzlesSubtitle: 'Задачи по уровням (Новичок, Средний, Продвинутый) с автосохранением прогресса в localStorage.',
+    puzzlesSolvedCountLabel: (solved, total) => `Решено: ${solved} / ${total}`,
+    puzzlesSolvedBadge: 'Решено',
+    puzzlesDifficultyAll: 'Все (1000)',
+    puzzlesDifficultyLabels: {
+      beginner: 'Новичок',
+      intermediate: 'Средний',
+      advanced: 'Продвинутый',
+    },
+    puzzlesThemeLabels: {
+      mateIn1: 'Мат в 1 ход',
+      backRank: 'Мат по последней линии',
+      fork: 'Вилка',
+      pin: 'Связка',
+      discovered: 'Вскрытое нападение',
+      skewer: 'Сквозной удар',
+      sacrifice: 'Жертва',
+      mateIn2: 'Мат в 2 хода',
+      deflection: 'Отвлечение',
+    },
+    puzzlesPrevBtn: 'Назад',
+    puzzlesNextBtn: 'Вперёд',
+    puzzlesRandomBtn: 'Случайная задача',
+    puzzlesJumpPlaceholder: '1 - 1000',
+    puzzlesJumpBtn: 'Перейти',
+    puzzlesHintBtn: 'Подсказка',
+    puzzlesResetBtn: 'Сброс',
+    puzzlesFlipBtn: 'Перевернуть',
+    puzzlesNumberLabel: (id, total) => `Задача #${id} из ${total}`,
+    puzzlesRatingLabel: (rating) => `Рейтинг ${rating}`,
+    puzzlesTurnWhite: 'Ход белых — найдите лучший ход',
+    puzzlesTurnBlack: 'Ход чёрных — найдите лучший ход',
+    puzzlesStatusPrompt: 'Сделайте ход на доске, чтобы решить задачу.',
+    puzzlesStatusOpponentReply: 'Ответ соперника...',
+    puzzlesStatusCorrectContinue: 'Отлично! Найдите следующий ход.',
+    puzzlesStatusSolved: 'Браво! Задача решена и сохранена.',
+    puzzlesStatusWrong: 'Не лучший ход — попробуйте снова или нажмите «Подсказка».',
+    puzzlesHintActiveLabel: (from, to) => `Подсказка: ${from} → ${to}`,
+
+    coachModeTactics: 'Тактические задания',
+    coachModePlayAi: 'Игра с Stockfish',
+    playAiTitle: 'Шахматная доска — Игра против ИИ Stockfish',
+    playAiSubtitle: 'Создайте полноценную доску и выберите уровень: Новичок, Средний, Продвинутый или Мастер.',
+    playAiDifficultyLabel: 'Уровень ИИ Stockfish:',
+    playAiLevels: {
+      weak: 'Слабый',
+      beginner: 'Новичок',
+      intermediate: 'Средний',
+      advanced: 'Продвинутый',
+      master: 'Мастер',
+    },
+    playAiLevelSubtitles: {
+      weak: '500 Elo · Глуб. 1',
+      beginner: '1000 Elo · Глуб. 4',
+      intermediate: '1500 Elo · Глуб. 7',
+      advanced: '2000 Elo · Глуб. 11',
+      master: '2500 Elo · Глуб. 15',
+    },
+    playAiSideLabel: 'Ваш цвет:',
+    playAiNewBoardBtn: 'Новая доска',
+    playAiUndoBtn: 'Назад',
+    coachBestArrowBtn: 'Стрелка лучшего хода',
+    playAiYourTurn: (sideName) => `Ваш ход (${sideName})`,
+    playAiThinking: 'Stockfish думает...',
+    playAiGameOverLabel: 'Партия завершена',
+    playAiPlayAgainBtn: 'Сыграть снова',
+    playAiMovesTitle: 'История ходов партии',
+    playAiEmptyMoves: 'Сделайте ход любой фигурой на доске, чтобы начать партию против Stockfish.',
+    playAiCoachTipTitle: 'Подсказка и оценка тренера',
+    playAiHintMessage: (san, from, to) =>
+      `Подсказка тренера: лучший ход ${san} (${from} → ${to}).`,
+    playAiDefaultTip: 'Следите за шкалой оценки у края доски или нажмите «Подсказка тренера».',
+    playAiLastAiMove: (san) => `Stockfish сыграл ${san}.`,
   },
 
   zh: {
@@ -1484,6 +1893,114 @@ def analyze_and_explain(uci_move):
       `已识别 · ${perspective}${opponentSan ? ` · 对手着法: ${opponentSan}` : ''} · 轮到: ${turnName}`,
     aiScanGenericFailed: 'AI 识别棋盘失败。',
     baselineCalibratedStatus: '基准参考帧已校准',
+
+    tabAnalyzer: '棋盘与识别',
+    tabCoach: '战术教练',
+    tabPuzzles: '谜题训练',
+
+    coachTitle: '交互式战术教练',
+    coachSubtitle: '专项训练捉双、牵制、闪击、一步杀与底线杀，实时结合 Stockfish 局面评估。',
+    coachAllTactics: '全部',
+    coachTactics: {
+      fork: '捉双',
+      pin: '牵制',
+      discovered: '闪击',
+      mateIn1: '一步杀',
+      backRank: '底线杀',
+    },
+    coachHintBtn: '教练提示',
+    coachPlayBestBtn: '走出最佳着法',
+    coachResetBtn: '重置局面',
+    coachFlipBtn: '翻转棋盘',
+    coachGoalLabel: '训练目标：',
+    coachFeedbackTitle: '教练解析与评估',
+    coachEvalTitle: 'Stockfish 局面评估',
+    coachStatusReady: '点击棋子并走子以完成本局战术。',
+    coachStatusCorrect: '战术着法精准！',
+    coachStatusWrong: '这步不够精确 — 请重试或点击“教练提示”。',
+    coachStatusSolvedByCoach: '教练已演示最佳着法',
+    coachPlayedMoveLabel: (san) => `你的着法：${san}`,
+    coachBetterMoveLabel: (san) => `最佳着法：${san}`,
+    coachNextDrillBtn: '下一题',
+    coachDrillProgress: (index, total) => `第 ${index} / ${total} 题`,
+    coachAnalyzingEval: '正在本地评估局面...',
+    coachStockfishBestLabel: 'Stockfish 推荐：',
+    coachWrongEvalNote: (playedSan, bestSan, evalAfter) =>
+      `你走了 ${playedSan}（局势评估：${evalAfter}），而最佳着法 ${bestSan} 能直接兑现战术优势。`,
+
+    puzzlesTitle: '千题战术训练（1,000 道棋局谜题）',
+    puzzlesSubtitle: '分级谜题（初级、中级、高级），自动保存已解题数量到本地存储。',
+    puzzlesSolvedCountLabel: (solved, total) => `已完成：${solved} / ${total}`,
+    puzzlesSolvedBadge: '已解决',
+    puzzlesDifficultyAll: '全部 (1000)',
+    puzzlesDifficultyLabels: {
+      beginner: '初级',
+      intermediate: '中级',
+      advanced: '高级',
+    },
+    puzzlesThemeLabels: {
+      mateIn1: '一步杀',
+      backRank: '底线杀',
+      fork: '捉双',
+      pin: '牵制',
+      discovered: '闪击',
+      skewer: '串击',
+      sacrifice: '弃子战术',
+      mateIn2: '两步杀',
+      deflection: '引离战术',
+    },
+    puzzlesPrevBtn: '上一题',
+    puzzlesNextBtn: '下一题',
+    puzzlesRandomBtn: '随机一题',
+    puzzlesJumpPlaceholder: '1 - 1000',
+    puzzlesJumpBtn: '跳转',
+    puzzlesHintBtn: '提示',
+    puzzlesResetBtn: '重置',
+    puzzlesFlipBtn: '翻转棋盘',
+    puzzlesNumberLabel: (id, total) => `第 #${id} 题 / 共 ${total} 题`,
+    puzzlesRatingLabel: (rating) => `等级分 ${rating}`,
+    puzzlesTurnWhite: '轮到白方 — 寻找最佳着法',
+    puzzlesTurnBlack: '轮到黑方 — 寻找最佳着法',
+    puzzlesStatusPrompt: '在棋盘上走子完成解谜。',
+    puzzlesStatusOpponentReply: '对手正在应着...',
+    puzzlesStatusCorrectContinue: '走得好！继续完成后续着法。',
+    puzzlesStatusSolved: '太棒了！已成功解决并保存进度。',
+    puzzlesStatusWrong: '不是最佳选择 — 请再试一次或点击“提示”。',
+    puzzlesHintActiveLabel: (from, to) => `提示：从 ${from} 走到 ${to}`,
+
+    coachModeTactics: '战术训练',
+    coachModePlayAi: '对战 Stockfish',
+    playAiTitle: '对弈棋盘 — 与 Stockfish AI 对战',
+    playAiSubtitle: '创建完整棋盘，自由选择初级、中级、高级或大师难度与 Stockfish 实时对弈。',
+    playAiDifficultyLabel: 'Stockfish AI 难度：',
+    playAiLevels: {
+      weak: '入门',
+      beginner: '初级',
+      intermediate: '中级',
+      advanced: '高级',
+      master: '大师',
+    },
+    playAiLevelSubtitles: {
+      weak: '500 Elo · 深度 1',
+      beginner: '1000 Elo · 深度 4',
+      intermediate: '1500 Elo · 深度 7',
+      advanced: '2000 Elo · 深度 11',
+      master: '2500 Elo · 深度 15',
+    },
+    playAiSideLabel: '执子颜色：',
+    playAiNewBoardBtn: '新建棋盘',
+    playAiUndoBtn: '悔棋',
+    coachBestArrowBtn: '最佳着法箭头',
+    playAiYourTurn: (sideName) => `轮到你走（${sideName}）`,
+    playAiThinking: 'Stockfish 正在思考...',
+    playAiGameOverLabel: '对局结束',
+    playAiPlayAgainBtn: '再来一局',
+    playAiMovesTitle: '对局着法记录',
+    playAiEmptyMoves: '在棋盘上移动任意棋子即可开始与 Stockfish 对弈。',
+    playAiCoachTipTitle: '教练实时评估',
+    playAiHintMessage: (san, from, to) => `教练提示：推荐着法为 ${san}（${from} → ${to}）。`,
+    playAiDefaultTip: '关注棋盘侧面的局势评估条，或随时点击“教练提示”。',
+    playAiLastAiMove: (san) => `Stockfish 走了 ${san}。`,
   },
 
   fr: {
@@ -1782,6 +2299,115 @@ def analyze_and_explain(uci_move):
       `Scanné · ${perspective}${opponentSan ? ` · Adversaire : ${opponentSan}` : ''} · Trait : ${turnName}`,
     aiScanGenericFailed: 'Échec de la lecture IA de l’échiquier.',
     baselineCalibratedStatus: 'Image de référence calibrée',
+
+    tabAnalyzer: 'Échiquier & Vision',
+    tabCoach: 'Coach',
+    tabPuzzles: 'Problèmes',
+
+    coachTitle: 'Coach Tactique Interactif',
+    coachSubtitle: 'Entraînez-vous aux fourchettes, clouages, découvertes, mats en 1 coup et mats du couloir avec Stockfish.',
+    coachAllTactics: 'Tout',
+    coachTactics: {
+      fork: 'Fourchette',
+      pin: 'Clouage',
+      discovered: 'Attaque à la découverte',
+      mateIn1: 'Mat en 1 coup',
+      backRank: 'Mat du couloir',
+    },
+    coachHintBtn: 'Indice du coach',
+    coachPlayBestBtn: 'Jouer le meilleur coup',
+    coachResetBtn: 'Réinitialiser',
+    coachFlipBtn: 'Inverser l’échiquier',
+    coachGoalLabel: 'Objectif de l’exercice :',
+    coachFeedbackTitle: 'Explication du coach & évaluation',
+    coachEvalTitle: 'Évaluation Stockfish',
+    coachStatusReady: 'Sélectionnez une pièce et jouez le coup tactique.',
+    coachStatusCorrect: 'Coup tactique exact !',
+    coachStatusWrong: 'Coup imprécis — réessayez ou demandez un indice.',
+    coachStatusSolvedByCoach: 'Meilleur coup exécuté par le coach',
+    coachPlayedMoveLabel: (san) => `Votre coup : ${san}`,
+    coachBetterMoveLabel: (san) => `Meilleur coup : ${san}`,
+    coachNextDrillBtn: 'Exercice suivant',
+    coachDrillProgress: (index, total) => `Exercice ${index} / ${total}`,
+    coachAnalyzingEval: 'Évaluation locale en cours...',
+    coachStockfishBestLabel: 'Choix Stockfish :',
+    coachWrongEvalNote: (playedSan, bestSan, evalAfter) =>
+      `Vous avez joué ${playedSan} (éval : ${evalAfter}), alors que ${bestSan} concrétise immédiatement le motif tactique.`,
+
+    puzzlesTitle: 'Section Problèmes (1 000 problèmes d’échecs)',
+    puzzlesSubtitle: 'Niveaux progressifs (Débutant, Intermédiaire, Avancé) avec sauvegarde automatique dans localStorage.',
+    puzzlesSolvedCountLabel: (solved, total) => `Résolus : ${solved} / ${total}`,
+    puzzlesSolvedBadge: 'Résolu',
+    puzzlesDifficultyAll: 'Tous (1000)',
+    puzzlesDifficultyLabels: {
+      beginner: 'Débutant',
+      intermediate: 'Intermédiaire',
+      advanced: 'Avancé',
+    },
+    puzzlesThemeLabels: {
+      mateIn1: 'Mat en 1 coup',
+      backRank: 'Mat du couloir',
+      fork: 'Fourchette',
+      pin: 'Clouage',
+      discovered: 'Découverte',
+      skewer: 'Enfilade',
+      sacrifice: 'Sacrifice décisif',
+      mateIn2: 'Mat en 2 coups',
+      deflection: 'Déviation',
+    },
+    puzzlesPrevBtn: 'Précédent',
+    puzzlesNextBtn: 'Suivant',
+    puzzlesRandomBtn: 'Aléatoire',
+    puzzlesJumpPlaceholder: '1 - 1000',
+    puzzlesJumpBtn: 'Aller',
+    puzzlesHintBtn: 'Indice',
+    puzzlesResetBtn: 'Réinit.',
+    puzzlesFlipBtn: 'Inverser',
+    puzzlesNumberLabel: (id, total) => `Problème #${id} sur ${total}`,
+    puzzlesRatingLabel: (rating) => `Elo ${rating}`,
+    puzzlesTurnWhite: 'Trait aux Blancs — Trouvez le meilleur coup',
+    puzzlesTurnBlack: 'Trait aux Noirs — Trouvez le meilleur coup',
+    puzzlesStatusPrompt: 'Déplacez une pièce pour résoudre le problème.',
+    puzzlesStatusOpponentReply: 'Réponse adverse...',
+    puzzlesStatusCorrectContinue: 'Bien joué ! Trouvez la suite pour conclure.',
+    puzzlesStatusSolved: 'Bravo ! Problème résolu et enregistré.',
+    puzzlesStatusWrong: 'Ce n’est pas le meilleur coup — réessayez ou utilisez Indice.',
+    puzzlesHintActiveLabel: (from, to) => `Indice : ${from} → ${to}`,
+
+    coachModeTactics: 'Exercices tactiques',
+    coachModePlayAi: 'Jouer contre Stockfish',
+    playAiTitle: 'Échiquier — Jouer contre l’IA Stockfish',
+    playAiSubtitle: 'Créez un échiquier complet et choisissez le niveau Débutant, Intermédiaire, Avancé ou Maître.',
+    playAiDifficultyLabel: 'Niveau de Stockfish :',
+    playAiLevels: {
+      weak: 'Faible',
+      beginner: 'Débutant',
+      intermediate: 'Intermédiaire',
+      advanced: 'Avancé',
+      master: 'Maître',
+    },
+    playAiLevelSubtitles: {
+      weak: '500 Elo · Prof. 1',
+      beginner: '1000 Elo · Prof. 4',
+      intermediate: '1500 Elo · Prof. 7',
+      advanced: '2000 Elo · Prof. 11',
+      master: '2500 Elo · Prof. 15',
+    },
+    playAiSideLabel: 'Votre camp :',
+    playAiNewBoardBtn: 'Nouvel échiquier',
+    playAiUndoBtn: 'Annuler',
+    coachBestArrowBtn: 'Flèche meilleur coup',
+    playAiYourTurn: (sideName) => `À vous de jouer (${sideName})`,
+    playAiThinking: 'Stockfish réfléchit...',
+    playAiGameOverLabel: 'Partie terminée',
+    playAiPlayAgainBtn: 'Rejouer',
+    playAiMovesTitle: 'Historique de la partie',
+    playAiEmptyMoves: 'Déplacez une pièce sur l’échiquier pour commencer la partie contre Stockfish.',
+    playAiCoachTipTitle: 'Évaluation en direct du coach',
+    playAiHintMessage: (san, from, to) =>
+      `Indice du coach : coup recommandé ${san} (${from} → ${to}).`,
+    playAiDefaultTip: 'Observez la barre d’évaluation ou demandez un indice à tout moment.',
+    playAiLastAiMove: (san) => `Stockfish a joué ${san}.`,
   },
 };
 

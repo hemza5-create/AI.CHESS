@@ -391,7 +391,7 @@ class LocalStockfishEngine {
           ? eloToSearchDepth(playerElo)
           : safeDepth;
       // Cap local WebView worker depth at 15 for responsive mobile performance
-      const clampedDepth = Math.max(4, Math.min(15, Math.round(resolvedDepth)));
+      const clampedDepth = Math.max(1, Math.min(15, Math.round(resolvedDepth)));
       const clampedMultiPv = Math.max(1, Math.min(3, Math.round(safeMultiPv)));
       const uciLog: string[] = [
         this.activeBackend === 'asm'

@@ -131,10 +131,10 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
   });
 
   return (
-    <section className="flex flex-col border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
+    <section className="flex flex-col border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm rounded-xl overflow-hidden shadow-lg">
       {/* Source & Stream Controls Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
-        <div className="flex flex-wrap items-center gap-1 p-1 bg-[#070A10]/65 rounded-lg border border-slate-500/50">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-400/35 bg-[#0B0E14]/20">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-[#070A10]/35 rounded-lg border border-slate-400/40">
           <button
             type="button"
             onClick={() => onSelectSource('virtual')}
@@ -211,7 +211,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
       </div>
 
       {/* Vision Pipeline Layer Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-[#0A0F1A]/55 border-b border-slate-500/45">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-[#0A0F1A]/25 border-b border-slate-400/35">
         <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
           {(
             [
@@ -228,7 +228,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
               className={`px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 viewMode === mode
                   ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400/60'
-                  : 'text-slate-100 hover:text-white bg-slate-900/45 border border-slate-700/50 hover:border-slate-500/60'
+                  : 'text-white bg-slate-900/30 hover:bg-slate-800/60 border border-slate-400/40 hover:border-slate-300/60'
               }`}
             >
               {label}
@@ -258,7 +258,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             className={`inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 ${
               moveSoundEnabled
                 ? 'border-emerald-400/60 bg-emerald-500/20 text-emerald-200'
-                : 'border-slate-600 bg-slate-900/55 text-slate-100 hover:text-white'
+                : 'border-slate-400/45 bg-slate-900/35 text-white hover:bg-slate-800/65'
             }`}
           >
             {moveSoundEnabled ? (
@@ -272,7 +272,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             type="button"
             onClick={onCalibrateBaseline}
             title={t.calibrateBaselineTooltip}
-            className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/65 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/35 hover:bg-slate-800/65 border border-slate-400/45 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
             <Crosshair className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300" />
             <span>{t.calibrateBaselineBtn}</span>
@@ -281,7 +281,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             type="button"
             onClick={onResetRoi}
             title={t.resetRoiTooltip}
-            className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/65 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/35 hover:bg-slate-800/65 border border-slate-400/45 rounded-md transition-colors whitespace-nowrap shrink-0"
           >
             <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{t.resetRoiBtn}</span>
@@ -292,7 +292,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
       {/* Live Video / Canvas Viewport */}
       <div className="p-2.5 sm:p-4">
         {source !== 'virtual' && (
-          <div className="mb-3 px-3.5 py-2.5 rounded-lg border border-cyan-400/45 bg-[#071520]/70 text-xs sm:text-sm text-slate-100 leading-relaxed">
+          <div className="mb-3 px-3.5 py-2.5 rounded-lg border border-cyan-400/45 bg-[#071520]/40 text-xs sm:text-sm text-white leading-relaxed">
             {t.roiGuideBefore}{' '}
             <strong className="text-cyan-300 font-bold">«{t.scanAiBtn}»</strong>{' '}
             {t.roiGuideAfter}
@@ -320,7 +320,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           onPointerMove={handlePointerMoveStage}
           onPointerUp={handlePointerUpStage}
           onPointerLeave={handlePointerUpStage}
-          className="relative w-full aspect-square max-w-[330px] sm:max-w-[520px] mx-auto bg-[#070A10]/45 border border-slate-500/60 rounded-lg overflow-hidden select-none"
+          className="relative w-full aspect-square max-w-[330px] sm:max-w-[520px] mx-auto bg-[#070A10]/25 border border-slate-400/45 rounded-lg overflow-hidden select-none"
         >
           {/* Underlying raw video element (camera) */}
           <video
@@ -336,7 +336,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
           />
 
           {source === 'camera' && !isStreaming && viewMode === 'original' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6 bg-[#070A10]/65 text-slate-100">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6 bg-[#070A10]/40 text-white">
               <Camera className="w-11 h-11 text-cyan-300" />
               <span className="text-sm sm:text-base font-semibold text-white">
                 {t.cameraPausedMsg}
@@ -456,7 +456,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
                 className={`px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 ${
                   simulateLightingNoise
                     ? 'border-amber-400/65 bg-amber-500/20 text-amber-200'
-                    : 'border-slate-500/70 bg-slate-900/60 text-slate-100 hover:text-white'
+                    : 'border-slate-400/50 bg-slate-900/35 text-white hover:bg-slate-800/65'
                 }`}
               >
                 {t.lightingNoiseBtn}
@@ -465,7 +465,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
               <button
                 type="button"
                 onClick={onResetVirtualGame}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm font-semibold text-slate-100 hover:text-white bg-slate-900/70 hover:bg-slate-800 border border-slate-600/70 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm font-semibold text-white bg-slate-900/35 hover:bg-slate-800/65 border border-slate-400/50 rounded-md transition-colors whitespace-nowrap shrink-0"
               >
                 {t.resetStreamBtn}
               </button>

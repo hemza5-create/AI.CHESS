@@ -129,8 +129,8 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
   return (
     <div className="flex flex-col gap-3 sm:gap-4">
       {/* 1. Stockfish UCI Engine Card */}
-      <section className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
-        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+      <section className="border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm rounded-xl overflow-hidden shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-400/35 bg-[#0B0E14]/20">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <h2 className="text-sm sm:text-base font-bold text-white whitespace-nowrap">
               {t.engineTitle}
@@ -174,7 +174,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
 
         <div className="p-3 sm:p-4 space-y-3 sm:space-y-4">
           {/* Local Stockfish Engine Status, Official Link, Verification & External Vision API Strip */}
-          <div className="rounded-lg border border-slate-500/50 bg-[#070B12]/65 px-2.5 sm:px-3.5 py-2 sm:py-2.5 space-y-2">
+          <div className="rounded-lg border border-slate-400/40 bg-[#070B12]/30 px-2.5 sm:px-3.5 py-2 sm:py-2.5 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-sm font-semibold">
                 {!isOnline ? (
@@ -395,7 +395,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
           <div>
             <div className="text-[11px] sm:text-sm font-semibold text-slate-100 mb-1.5 sm:mb-2">{t.topLinesTitle}</div>
             {analysis && analysis.lines.length > 0 ? (
-              <div className="divide-y divide-slate-600/50 border border-slate-500/50 rounded-lg bg-[#070B12]/65">
+              <div className="divide-y divide-slate-500/40 border border-slate-400/40 rounded-lg bg-[#070B12]/30">
                 {analysis.lines.map((line) => {
                   const scoreStr =
                     line.scoreType === 'mate'
@@ -451,7 +451,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
             <button
               type="button"
               onClick={() => setShowUciLog((v) => !v)}
-              className="w-full flex items-center justify-between px-3 py-2 sm:px-3.5 sm:py-2.5 text-[11px] sm:text-sm font-semibold text-white bg-[#070B12]/65 hover:bg-[#070B12]/80 border border-slate-500/55 rounded-lg transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 sm:px-3.5 sm:py-2.5 text-[11px] sm:text-sm font-semibold text-white bg-[#070B12]/35 hover:bg-[#070B12]/55 border border-slate-400/45 rounded-lg transition-colors"
             >
               <span className="inline-flex items-center gap-1.5 sm:gap-2">
                 <Terminal className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300" />
@@ -467,7 +467,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
             {showUciLog && (
               <pre
                 dir="ltr"
-                className="mt-2 p-2.5 sm:p-3.5 rounded-lg bg-[#060910]/85 border border-slate-500/55 text-[11px] sm:text-sm font-mono text-slate-100 overflow-x-auto max-h-40 sm:max-h-48 overflow-y-auto leading-relaxed"
+                className="mt-2 p-2.5 sm:p-3.5 rounded-lg bg-[#060910]/55 border border-slate-400/45 text-[11px] sm:text-sm font-mono text-white overflow-x-auto max-h-40 sm:max-h-48 overflow-y-auto leading-relaxed"
               >
                 {analysis?.uciLog?.length
                   ? analysis.uciLog.join('\n')
@@ -479,8 +479,8 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
       </section>
 
       {/* 2. Gemini LLM Explanation & Spoken Multilingual Commentary (On-Demand Toggle) */}
-      <section className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-500/45 bg-[#0B0E14]/45">
+      <section className="border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm rounded-xl overflow-hidden shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3.5 border-b border-slate-400/35 bg-[#0B0E14]/20">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <MessageSquareText
               className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${voiceCoachEnabled ? 'text-cyan-300' : 'text-slate-200'}`}
@@ -555,7 +555,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
               </div>
             )}
 
-            <div className="min-h-[72px] sm:min-h-[92px] p-2.5 sm:p-3.5 rounded-lg bg-[#070B12]/75 border border-slate-500/55 text-xs sm:text-base leading-relaxed text-white">
+            <div className="min-h-[72px] sm:min-h-[92px] p-2.5 sm:p-3.5 rounded-lg bg-[#070B12]/35 border border-slate-400/45 text-xs sm:text-base leading-relaxed text-white">
               {isGeneratingExplanation ? (
                 <span className="inline-flex items-center gap-2 text-slate-100 text-xs sm:text-sm">
                   <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-cyan-300" />
@@ -564,7 +564,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
               ) : explanationText ? (
                 explanationText
               ) : (
-                <span className="text-slate-200 text-[11px] sm:text-sm">
+                <span className="text-slate-100 text-[11px] sm:text-sm">
                   {t.voiceCoachEmptyText}
                 </span>
               )}
@@ -593,7 +593,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
                 <button
                   type="button"
                   onClick={onReplayOrStopAudio}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-sm font-semibold text-white bg-slate-800 hover:bg-slate-700 border border-slate-500/60 rounded-md transition-colors whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-sm font-semibold text-white bg-slate-800/75 hover:bg-slate-700 border border-slate-400/50 rounded-md transition-colors whitespace-nowrap shrink-0"
                 >
                   {isPlayingAudio ? (
                     <>
@@ -614,15 +614,15 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
       </section>
 
       {/* 3. Detected Move Log */}
-      <section className="border border-slate-500/45 bg-[#0F1522]/55 backdrop-blur-md rounded-xl overflow-hidden shadow-lg">
-        <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-500/45 bg-[#0B0E14]/45">
+      <section className="border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm rounded-xl overflow-hidden shadow-lg">
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-400/35 bg-[#0B0E14]/20">
           <h3 className="text-xs sm:text-base font-bold text-white">{t.moveLogTitle}</h3>
-          <span className="text-[11px] sm:text-sm font-mono font-semibold text-slate-200">
+          <span className="text-[11px] sm:text-sm font-mono font-semibold text-slate-100">
             {t.moveCount(moveHistory.length)}
           </span>
         </div>
 
-        <div className="max-h-40 sm:max-h-48 overflow-y-auto divide-y divide-slate-600/50 bg-[#070B12]/50">
+        <div className="max-h-40 sm:max-h-48 overflow-y-auto divide-y divide-slate-500/40 bg-[#070B12]/30">
           {moveHistory.length === 0 ? (
             <div className="px-3 sm:px-4 py-3 sm:py-4 text-[11px] sm:text-sm text-slate-200 text-center">
               {t.emptyMoveLog}
