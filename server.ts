@@ -8,12 +8,15 @@ import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { Chess } from 'chess.js';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { cryptoKeyVault } from './server/cryptoKeyVault.ts';
+import {
+  checkStockfishOfficialVersion,
+  getActiveEngineDescriptors,
+  performStockfishAutoUpdate,
+  resolveStockfishAssetPath,
+} from './server/stockfishUpdater.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
-const STOCKFISH_BIN = path.resolve(
-  process.cwd(),
-  'node_modules/stockfish/bin/stockfish-19-lite-single.js'
-);
 
 interface UciLineInfo {
   multipv: number;
@@ -127,6 +130,18 @@ class StockfishUciEngine {
     this.exitListeners.clear();
   }
 
+  public reloadEngine(): void {
+    const proc = this.proc;
+    if (proc) {
+      try {
+        proc.kill();
+      } catch {
+        // ignore kill error
+      }
+    }
+    this.resetProcessState(new Error('تم تحديث محرك Stockfish وإعادة تهيئته.'));
+  }
+
   private async ensureReady(): Promise<void> {
     if (this.proc && this.ready) {
       if (this.needsFlush) {
@@ -136,12 +151,14 @@ class StockfishUciEngine {
     }
     if (this.initPromise) return this.initPromise;
 
-    if (!fs.existsSync(STOCKFISH_BIN)) {
-      throw new Error('ملف محرك Stockfish غير موجود في node_modules/stockfish.');
+    const activeEngine = getActiveEngineDescriptors();
+    const stockfishBinPath = activeEngine.nodeEnginePath;
+    if (!fs.existsSync(stockfishBinPath)) {
+      throw new Error('ملف محرك Stockfish غير موجود في المسار المحدد.');
     }
 
     this.initPromise = new Promise<void>((resolve, reject) => {
-      const proc = spawn(process.execPath, [STOCKFISH_BIN], {
+      const proc = spawn(process.execPath, [stockfishBinPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       this.proc = proc;
@@ -544,7 +561,22 @@ async function startServer() {
   const app = express();
   app.use((req: Request, res: Response, next: express.NextFunction) => {
     res.setHeader('Permissions-Policy', 'camera=*, microphone=*, display-capture=*');
-    if (req.path.startsWith('/api')) {
+    if (req.path.startsWith('/api/security') || req.path === '/api/stockfish/auto-update') {
+      const origin = req.headers.origin;
+      const appUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
+      const rawHost = req.headers['x-forwarded-host'] || req.headers.host;
+      const host = Array.isArray(rawHost) ? rawHost[0] : rawHost;
+      if (origin && ((appUrl && origin === appUrl) || (host && origin.endsWith(`://${host}`)))) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+      }
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      if (req.method === 'OPTIONS') {
+        res.status(204).end();
+        return;
+      }
+    } else if (req.path.startsWith('/api')) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -557,12 +589,80 @@ async function startServer() {
   });
   app.use(express.json({ limit: '4mb' }));
 
+  const extractBearerToken = (req: Request): string => {
+    const auth = req.headers.authorization;
+    if (!auth || typeof auth !== 'string') return '';
+    const match = /^Bearer\s+(.+)$/i.exec(auth.trim());
+    return match ? match[1].trim() : '';
+  };
+
+  // Serve updated or bundled Stockfish WASM/JS worker files dynamically
+  app.get('/stockfish/:filename', (req: Request, res: Response, next: express.NextFunction) => {
+    const requested = typeof req.params.filename === 'string' ? req.params.filename : '';
+    const resolved = resolveStockfishAssetPath(requested);
+    if (!resolved) {
+      next();
+      return;
+    }
+    res.setHeader(
+      'Content-Type',
+      resolved.cleanName.endsWith('.wasm')
+        ? 'application/wasm'
+        : 'application/javascript; charset=utf-8'
+    );
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(resolved.filePath);
+  });
+
   // Engine Health Check Endpoint
   app.get('/api/stockfish/health', (_req: Request, res: Response) => {
+    const active = getActiveEngineDescriptors();
     res.json({
-      ok: fs.existsSync(STOCKFISH_BIN),
-      engine: 'stockfish-19-lite-single',
+      ok: fs.existsSync(active.nodeEnginePath),
+      engine: active.wasmScript.replace(/\.js$/i, ''),
+      installedVersion: active.installedVersion,
+      installedSource: active.installedSource,
+      wasmScript: active.wasmScript,
+      asmScript: active.asmScript,
+      updatedAt: active.updatedAt,
     });
+  });
+
+  // Check Official Stockfish Release & Installed Version
+  app.get('/api/stockfish/version', async (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const status = await checkStockfishOfficialVersion();
+      res.json(status);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'تعذر فحص أحدث إصدار لمحرك Stockfish.';
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // Authenticated Official Stockfish Auto-Update Endpoint
+  app.post('/api/stockfish/auto-update', async (req: Request, res: Response) => {
+    const bearer = extractBearerToken(req);
+    if (!cryptoKeyVault.verifyAdminSession(bearer)) {
+      res.status(401).json({
+        error: 'Admin authorization required to auto-update Stockfish engine files.',
+        requiresAdminAuth: true,
+        authStatus: cryptoKeyVault.getAuthStatus(''),
+      });
+      return;
+    }
+
+    try {
+      const result = await performStockfishAutoUpdate();
+      stockfishEngine.reloadEngine();
+      res.json(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'فشل التحديث التلقائي لمحرك Stockfish.';
+      console.error('[/api/stockfish/auto-update]', message);
+      res.status(502).json({ error: message });
+    }
   });
 
   // Stockfish UCI Analysis Endpoint
@@ -1021,6 +1121,7 @@ async function startServer() {
         '.env',
         '.env.local',
         '.DS_Store',
+        '.stockfish-runtime',
       ]);
 
       const files: { relPath: string; data: Buffer }[] = [];
@@ -1110,6 +1211,161 @@ async function startServer() {
       console.error('[/api/download/app.zip]', message);
       res.status(500).json({ error: message });
     }
+  });
+
+  // ==================== Cryptographic Key Vault & Rotation API ====================
+
+  app.get('/api/security/public-keys', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(cryptoKeyVault.getPublicKeyBundle());
+  });
+
+  app.get('/api/security/auth-status', (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(cryptoKeyVault.getAuthStatus(extractBearerToken(req)));
+  });
+
+  app.post('/api/security/admin/claim', (req: Request, res: Response) => {
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
+    const passcode = typeof body.passcode === 'string' ? body.passcode : '';
+    const result = cryptoKeyVault.claimAdminPasscode(passcode);
+    if (!result.ok) {
+      const status = result.error?.includes('already') ? 409 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true, token: result.token });
+  });
+
+  app.post('/api/security/admin/login', (req: Request, res: Response) => {
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
+    const passcode = typeof body.passcode === 'string' ? body.passcode : '';
+    const result = cryptoKeyVault.loginWithPasscode(passcode);
+    if (!result.ok) {
+      res.status(401).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true, token: result.token });
+  });
+
+  app.post('/api/security/admin/logout', (req: Request, res: Response) => {
+    const token = extractBearerToken(req);
+    if (token) {
+      cryptoKeyVault.revokeAdminSession(token);
+    }
+    res.json({ ok: true });
+  });
+
+  app.post('/api/security/issue-token', (req: Request, res: Response) => {
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+      subject?: unknown;
+      scope?: unknown;
+      ttlSeconds?: unknown;
+      nonce?: unknown;
+      timestamp?: unknown;
+      clientPublicJwk?: unknown;
+      clientProofB64Url?: unknown;
+    };
+
+    const nonce = typeof body.nonce === 'string' ? body.nonce.trim() : '';
+    const timestamp = Number(body.timestamp);
+    const replayCheck = cryptoKeyVault.consumeAntiReplayNonce(nonce, timestamp);
+    if (!replayCheck.ok) {
+      res.status(400).json({ error: replayCheck.error });
+      return;
+    }
+
+    const popCheck = cryptoKeyVault.verifyClientPopProof({
+      clientPublicJwk: (body.clientPublicJwk ?? {}) as {
+        kty?: string;
+        crv?: string;
+        x?: string;
+        y?: string;
+      },
+      clientProofB64Url:
+        typeof body.clientProofB64Url === 'string' ? body.clientProofB64Url : '',
+      nonce,
+      timestamp,
+    });
+    if (!popCheck.ok) {
+      res.status(403).json({ error: popCheck.error });
+      return;
+    }
+
+    const subject =
+      typeof body.subject === 'string' && body.subject.trim()
+        ? body.subject.trim()
+        : 'chessvision-client';
+    const scope =
+      typeof body.scope === 'string' && body.scope.trim() ? body.scope.trim() : 'engine:verified';
+    const ttlSeconds =
+      typeof body.ttlSeconds === 'number' && Number.isFinite(body.ttlSeconds)
+        ? body.ttlSeconds
+        : 300;
+
+    const issued = cryptoKeyVault.issueSignedToken({
+      subject,
+      scope,
+      ttlSeconds,
+      clientThumbprint: popCheck.thumbprint,
+    });
+    res.json({
+      ...issued,
+      clientThumbprint: popCheck.thumbprint,
+    });
+  });
+
+  app.post('/api/security/verify', (req: Request, res: Response) => {
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { token?: unknown };
+    const token = typeof body.token === 'string' ? body.token : '';
+    res.json(cryptoKeyVault.verifySignedToken(token));
+  });
+
+  app.post('/api/security/rotate', (req: Request, res: Response) => {
+    const bearer = extractBearerToken(req);
+    if (!cryptoKeyVault.verifyAdminSession(bearer)) {
+      res.status(401).json({ error: 'Admin authorization required to rotate cryptographic keys.' });
+      return;
+    }
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { reason?: unknown };
+    const reason =
+      typeof body.reason === 'string' && body.reason.trim()
+        ? body.reason.trim()
+        : 'manual-programmatic-rotation';
+    const rotatedKey = cryptoKeyVault.rotateKeys(reason);
+    res.json({
+      ok: true,
+      rotatedKey,
+      bundle: cryptoKeyVault.getPublicKeyBundle(),
+    });
+  });
+
+  app.post('/api/security/policy', (req: Request, res: Response) => {
+    const bearer = extractBearerToken(req);
+    if (!cryptoKeyVault.verifyAdminSession(bearer)) {
+      res.status(401).json({ error: 'Admin authorization required to update rotation policy.' });
+      return;
+    }
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+      autoRotateEnabled?: unknown;
+      rotationIntervalSeconds?: unknown;
+      graceWindowSeconds?: unknown;
+    };
+    const policy = cryptoKeyVault.updatePolicy({
+      autoRotateEnabled:
+        typeof body.autoRotateEnabled === 'boolean' ? body.autoRotateEnabled : undefined,
+      rotationIntervalSeconds:
+        typeof body.rotationIntervalSeconds === 'number'
+          ? body.rotationIntervalSeconds
+          : undefined,
+      graceWindowSeconds:
+        typeof body.graceWindowSeconds === 'number' ? body.graceWindowSeconds : undefined,
+    });
+    res.json({
+      ok: true,
+      policy,
+      bundle: cryptoKeyVault.getPublicKeyBundle(),
+    });
   });
 
   // Ensure unmatched /api/* routes always return valid JSON (never HTML fallback)

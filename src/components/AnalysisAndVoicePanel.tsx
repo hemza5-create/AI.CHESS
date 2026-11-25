@@ -17,19 +17,40 @@ import {
   ExternalLink,
   CheckCircle2,
   AlertCircle,
+  Download,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
 import type {
   MoveRecord,
   StockfishAnalysisResult,
   TtsVoiceName,
 } from '../types/chess.ts';
-import type { LocalEngineVerificationResult } from '../engine/localStockfishEngine.ts';
-import type {
-  ActiveEngineSource,
-  RemoteServerStatus,
+import {
+  localStockfishEngine,
+  type LocalEngineVerificationResult,
+} from '../engine/localStockfishEngine.ts';
+import {
+  buildApiUrl,
+  type ActiveEngineSource,
+  type RemoteServerStatus,
 } from '../utils/networkAndServer.ts';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { getLocalizedGameOverReason } from '../i18n/translations.ts';
+
+interface StockfishVersionInfo {
+  installedVersion: string;
+  installedSource: 'official-auto-update' | 'bundled';
+  officialReleaseTag: string | null;
+  officialReleaseName: string | null;
+  officialReleaseUrl: string;
+  latestWasmVersion: string | null;
+  updateAvailable: boolean;
+  wasmScript: string;
+  asmScript: string | null;
+  updatedAt: string | null;
+  filesCount: number;
+}
 
 interface AnalysisAndVoicePanelProps {
   analysis: StockfishAnalysisResult | null;
@@ -65,6 +86,7 @@ interface AnalysisAndVoicePanelProps {
   onGenerateAndSpeak: () => void;
   onReplayOrStopAudio: () => void;
   onApplyPvMove: (uci: string) => void;
+  onEngineAutoUpdated?: () => void;
 }
 
 const VOICE_KEYS: TtsVoiceName[] = ['Kore', 'Charon', 'Fenrir', 'Zephyr', 'Puck'];
@@ -103,11 +125,25 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
   onGenerateAndSpeak,
   onReplayOrStopAudio,
   onApplyPvMove,
+  onEngineAutoUpdated,
 }) => {
   const { language, t } = useLanguage();
   const [showUciLog, setShowUciLog] = useState(false);
   const [showServerConfig, setShowServerConfig] = useState(false);
   const [serverUrlDraft, setServerUrlDraft] = useState(externalServerUrl);
+
+  const [versionInfo, setVersionInfo] = useState<StockfishVersionInfo | null>(null);
+  const [isAutoUpdating, setIsAutoUpdating] = useState(false);
+  const [autoUpdateNotice, setAutoUpdateNotice] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+  // Session admin token held strictly in React state memory (never localStorage)
+  const [adminToken, setAdminToken] = useState<string>('');
+  const [authPromptMode, setAuthPromptMode] = useState<'claim' | 'login' | null>(null);
+  const [passcodeDraft, setPasscodeDraft] = useState<string>('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
 
   const resolvedGameOverReason = analysis?.gameOverKey
     ? getLocalizedGameOverReason(language, analysis.gameOverKey)
@@ -116,6 +152,170 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
   React.useEffect(() => {
     setServerUrlDraft(externalServerUrl);
   }, [externalServerUrl]);
+
+  const fetchOfficialVersionStatus = React.useCallback(async () => {
+    if (!isOnline) return;
+    const url = buildApiUrl('/api/stockfish/version', externalServerUrl) ?? '/api/stockfish/version';
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = (await res.json()) as StockfishVersionInfo;
+      if (data && typeof data.installedVersion === 'string') {
+        setVersionInfo(data);
+      }
+    } catch {
+      // ignore offline or unreachable transient check errors
+    }
+  }, [externalServerUrl, isOnline]);
+
+  React.useEffect(() => {
+    void fetchOfficialVersionStatus();
+  }, [fetchOfficialVersionStatus]);
+
+  const executeAutoUpdate = React.useCallback(
+    async (tokenOverride?: string) => {
+      const activeToken = tokenOverride ?? adminToken;
+      setIsAutoUpdating(true);
+      setAutoUpdateNotice(null);
+
+      try {
+        const updateUrl =
+          buildApiUrl('/api/stockfish/auto-update', externalServerUrl) ??
+          '/api/stockfish/auto-update';
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (activeToken) {
+          headers.Authorization = `Bearer ${activeToken}`;
+        }
+
+        const res = await fetch(updateUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({}),
+        });
+
+        const payload = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          requiresAdminAuth?: boolean;
+          authStatus?: { configuredViaEnv?: boolean; claimed?: boolean };
+          manifest?: {
+            packageVersion: string;
+            wasmScript: string;
+            asmScript: string | null;
+            updatedAt: string;
+            files: { name: string }[];
+          };
+          status?: StockfishVersionInfo;
+        };
+
+        if (res.status === 401 && payload.requiresAdminAuth) {
+          const needsClaim =
+            !payload.authStatus?.configuredViaEnv && !payload.authStatus?.claimed;
+          setAuthPromptMode(needsClaim ? 'claim' : 'login');
+          setAuthError(null);
+          return;
+        }
+
+        if (!res.ok || !payload.ok || !payload.manifest) {
+          throw new Error(payload.error || `HTTP ${res.status}`);
+        }
+
+        setAuthPromptMode(null);
+        if (payload.status) {
+          setVersionInfo(payload.status);
+        }
+
+        if ('caches' in globalThis) {
+          try {
+            const keys = await globalThis.caches.keys();
+            for (const k of keys) {
+              if (k.includes('stockfish') || k.includes('workbox')) {
+                const cache = await globalThis.caches.open(k);
+                const requests = await cache.keys();
+                await Promise.all(
+                  requests
+                    .filter((reqItem) => reqItem.url.includes('/stockfish/'))
+                    .map((reqItem) => cache.delete(reqItem))
+                );
+              }
+            }
+          } catch {
+            // ignore CacheStorage cleanup errors
+          }
+        }
+
+        localStockfishEngine.reloadWithVersion(payload.manifest.updatedAt, {
+          wasmJs: payload.manifest.wasmScript,
+          asmJs: payload.manifest.asmScript,
+        });
+
+        setAutoUpdateNotice({
+          ok: true,
+          text: t.stockfishUpdateSuccess(
+            payload.manifest.packageVersion,
+            payload.manifest.files.length
+          ),
+        });
+        onVerifyLocalEngine();
+        onEngineAutoUpdated?.();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setAutoUpdateNotice({
+          ok: false,
+          text: t.stockfishUpdateFailed(msg),
+        });
+      } finally {
+        setIsAutoUpdating(false);
+      }
+    },
+    [
+      adminToken,
+      externalServerUrl,
+      onEngineAutoUpdated,
+      onVerifyLocalEngine,
+      t,
+    ]
+  );
+
+  const handleAuthSubmit = React.useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!passcodeDraft.trim() || !authPromptMode) return;
+      setIsAuthenticating(true);
+      setAuthError(null);
+      try {
+        const endpoint =
+          authPromptMode === 'claim'
+            ? '/api/security/admin/claim'
+            : '/api/security/admin/login';
+        const authUrl = buildApiUrl(endpoint, externalServerUrl) ?? endpoint;
+        const res = await fetch(authUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passcode: passcodeDraft }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          token?: string;
+          error?: string;
+        };
+        if (!res.ok || !data.token) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        setAdminToken(data.token);
+        setPasscodeDraft('');
+        setAuthPromptMode(null);
+        await executeAutoUpdate(data.token);
+      } catch (err) {
+        setAuthError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsAuthenticating(false);
+      }
+    },
+    [authPromptMode, executeAutoUpdate, externalServerUrl, passcodeDraft]
+  );
 
   const scoreTone =
     !analysis
@@ -197,6 +397,24 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
+                  onClick={() => void executeAutoUpdate()}
+                  disabled={!isOnline || isAutoUpdating}
+                  className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 rounded transition-colors whitespace-nowrap shrink-0"
+                >
+                  {isAutoUpdating ? (
+                    <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  )}
+                  <span>
+                    {isAutoUpdating
+                      ? t.updatingStockfishBtn
+                      : t.autoUpdateStockfishBtn}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={onVerifyLocalEngine}
                   disabled={isVerifyingEngine}
                   className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 disabled:opacity-50 rounded transition-colors whitespace-nowrap shrink-0"
@@ -214,7 +432,7 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
                 </button>
 
                 <a
-                  href="https://stockfishchess.org"
+                  href={versionInfo?.officialReleaseUrl || 'https://stockfishchess.org'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs font-semibold text-white bg-slate-800/85 hover:bg-slate-700 border border-slate-500/60 rounded transition-colors whitespace-nowrap shrink-0"
@@ -224,6 +442,83 @@ export const AnalysisAndVoicePanel: React.FC<AnalysisAndVoicePanelProps> = ({
                 </a>
               </div>
             </div>
+
+            {/* Official & Installed Stockfish Version Metadata Row */}
+            {versionInfo && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300 font-mono" dir="ltr">
+                <span className="inline-flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
+                  <span>
+                    {t.stockfishInstalledBadge(
+                      versionInfo.installedVersion,
+                      versionInfo.officialReleaseTag
+                    )}
+                  </span>
+                </span>
+                {versionInfo.updateAvailable && versionInfo.latestWasmVersion && (
+                  <span className="text-amber-300 font-semibold">
+                    {t.stockfishUpdateAvailableBadge(versionInfo.latestWasmVersion)}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Inline Admin Passcode Authorization Prompt (only shown when updating engine files requires session unlock) */}
+            {authPromptMode && (
+              <form
+                onSubmit={(e) => void handleAuthSubmit(e)}
+                className="rounded-lg border border-amber-400/50 bg-amber-500/10 p-2.5 space-y-2"
+              >
+                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold text-amber-200">
+                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {authPromptMode === 'claim'
+                      ? t.stockfishAuthClaimTitle
+                      : t.stockfishAuthLoginTitle}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="password"
+                    value={passcodeDraft}
+                    onChange={(e) => setPasscodeDraft(e.target.value)}
+                    placeholder={t.stockfishAuthPasscodePlaceholder}
+                    className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-slate-950/85 border border-slate-600 rounded text-white focus:outline-none focus:border-cyan-400"
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isAuthenticating || !passcodeDraft.trim()}
+                    className="px-2.5 py-1.5 text-xs font-bold bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 text-slate-950 rounded whitespace-nowrap"
+                  >
+                    {isAuthenticating ? '...' : t.stockfishAuthConfirmBtn}
+                  </button>
+                </div>
+                {authError && (
+                  <div className="text-[11px] text-rose-300 font-medium">
+                    {authError}
+                  </div>
+                )}
+              </form>
+            )}
+
+            {/* Official Stockfish Auto-Update Status Banner */}
+            {autoUpdateNotice && (
+              <div
+                className={`flex items-start gap-1.5 rounded px-2 py-1.5 text-[11px] sm:text-xs font-medium border ${
+                  autoUpdateNotice.ok
+                    ? 'bg-cyan-500/15 border-cyan-400/45 text-cyan-100'
+                    : 'bg-rose-500/15 border-rose-400/50 text-rose-200'
+                }`}
+              >
+                {autoUpdateNotice.ok ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-cyan-300 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-300 shrink-0 mt-0.5" />
+                )}
+                <span>{autoUpdateNotice.text}</span>
+              </div>
+            )}
 
             {/* Local Stockfish Self-Test Result */}
             {localEngineVerify && (

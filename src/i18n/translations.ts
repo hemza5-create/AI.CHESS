@@ -194,6 +194,16 @@ export interface TranslationDictionary {
   stockfishWebsiteBtn: string;
   verifyLocalEngineBtn: string;
   verifyingLocalEngineBtn: string;
+  autoUpdateStockfishBtn: string;
+  updatingStockfishBtn: string;
+  stockfishInstalledBadge: (version: string, officialTag?: string | null) => string;
+  stockfishUpdateAvailableBadge: (latest: string) => string;
+  stockfishUpdateSuccess: (version: string, filesCount: number) => string;
+  stockfishUpdateFailed: (error: string) => string;
+  stockfishAuthClaimTitle: string;
+  stockfishAuthLoginTitle: string;
+  stockfishAuthPasscodePlaceholder: string;
+  stockfishAuthConfirmBtn: string;
   localEngineVerifiedOk: (backend: string, bestMove: string, latencyMs: number) => string;
   localEngineVerifyFailed: (error: string) => string;
   externalVisionConnectedBadge: string;
@@ -311,6 +321,7 @@ export interface TranslationDictionary {
   tabAnalyzer: string;
   tabCoach: string;
   tabPuzzles: string;
+  tabKeyVault: string;
 
   // Interactive Coach
   coachTitle: string;
@@ -388,6 +399,80 @@ export interface TranslationDictionary {
   playAiHintMessage: (san: string, from: string, to: string) => string;
   playAiDefaultTip: string;
   playAiLastAiMove: (san: string) => string;
+
+  // Chess Openings Learning Panel
+  openingsTitle: string;
+  openingsSubtitle: string;
+  openingsCategoryAll: string;
+  openingsCategories: Record<'open' | 'semiOpen' | 'closed' | 'indian' | 'flank', string>;
+  openingsSelectLabel: string;
+  openingsCountLabel: (count: number) => string;
+  openingsResetBtn: string;
+  openingsPrevBtn: string;
+  openingsNextBtn: string;
+  openingsAutoPlayBtn: string;
+  openingsPauseBtn: string;
+  openingsFlipBtn: string;
+  openingsArrowBtn: string;
+  openingsSummaryTitle: string;
+  openingsWhitePlanLabel: string;
+  openingsBlackPlanLabel: string;
+  openingsMoveExplanationTitle: string;
+  openingsStartHint: string;
+  openingsCompletedNote: string;
+  openingsExpectedNextLabel: (san: string) => string;
+  openingsWrongInteractiveMove: (playedSan: string, expectedSan: string) => string;
+  openingsMovesTimelineTitle: string;
+  openingsStepCounter: (current: number, total: number) => string;
+
+  // Cryptographic Key Vault & Anti-Reverse-Engineering Tab
+  keyVaultTitle: string;
+  keyVaultSubtitle: string;
+  keyVaultAuthClaimTitle: string;
+  keyVaultAuthClaimHint: string;
+  keyVaultAuthLoginTitle: string;
+  keyVaultAuthLoginHint: string;
+  keyVaultPasscodePlaceholder: string;
+  keyVaultClaimBtn: string;
+  keyVaultUnlockBtn: string;
+  keyVaultLockBtn: string;
+  keyVaultUnlockedBadge: string;
+  keyVaultLockedHint: string;
+  keyVaultActiveEpochTitle: string;
+  keyVaultKeyIdLabel: string;
+  keyVaultAlgorithmLabel: string;
+  keyVaultFingerprintLabel: string;
+  keyVaultNextRotationLabel: string;
+  keyVaultLineageLabel: string;
+  keyVaultLineageGenesis: string;
+  keyVaultLineageSignedBy: (prevKid: string) => string;
+  keyVaultRotationControlsTitle: string;
+  keyVaultRotateNowBtn: string;
+  keyVaultRotatingBtn: string;
+  keyVaultAutoRotateLabel: string;
+  keyVaultIntervalLabel: string;
+  keyVaultGraceLabel: string;
+  keyVaultSavePolicyBtn: string;
+  keyVaultPolicySaved: string;
+  keyVaultTokenLabTitle: string;
+  keyVaultIssueTokenBtn: string;
+  keyVaultTamperBtn: string;
+  keyVaultVerifyBtn: string;
+  keyVaultTokenPlaceholder: string;
+  keyVaultVerifiedValid: string;
+  keyVaultVerifiedInvalid: string;
+  keyVaultShieldTitle: string;
+  keyVaultShieldItems: {
+    memorySeal: string;
+    nonExtractable: string;
+    obfuscatedShards: string;
+    antiReplay: string;
+    runtimeIntegrity: string;
+  };
+  keyVaultStatusActive: string;
+  keyVaultStatusGrace: string;
+  keyVaultStatusRetired: string;
+  keyVaultAuditTitle: string;
 }
 
 export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
@@ -537,6 +622,20 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     stockfishWebsiteBtn: 'موقع Stockfish',
     verifyLocalEngineBtn: 'فحص المحرك محلياً',
     verifyingLocalEngineBtn: 'جاري التحقق...',
+    autoUpdateStockfishBtn: 'تحديث تلقائي Stockfish',
+    updatingStockfishBtn: 'جاري التحديث...',
+    stockfishInstalledBadge: (version, officialTag) =>
+      officialTag
+        ? `المثبّت: v${version} · الرسمي: ${officialTag}`
+        : `الإصدار المثبّت: v${version}`,
+    stockfishUpdateAvailableBadge: (latest) => `يتوفر تحديث رسمي: v${latest}`,
+    stockfishUpdateSuccess: (version, filesCount) =>
+      `تم جلب وتحديث محرك Stockfish (v${version} · ${filesCount} ملفات مُتحقق منها بـ SHA-512) وإعادة تشغيله بنجاح.`,
+    stockfishUpdateFailed: (error) => `تعذر التحديث التلقائي: ${error}`,
+    stockfishAuthClaimTitle: 'عيّن رمز أمان (8 أحرف فأكثر) لحماية تحديث ملفات المحرك:',
+    stockfishAuthLoginTitle: 'أدخل رمز الأمان لتأكيد تحديث ملفات Stockfish تلقائياً:',
+    stockfishAuthPasscodePlaceholder: 'رمز الأمان...',
+    stockfishAuthConfirmBtn: 'تأكيد وتحديث',
     localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
       `تم التحقق محلياً (${backend}) · نقلة اختبار: ${bestMove} (${latencyMs}ms)`,
     localEngineVerifyFailed: (error) => `فشل التحقق المحلي: ${error}`,
@@ -687,6 +786,7 @@ def analyze_and_explain(uci_move):
     tabAnalyzer: 'الرقعة والرصد',
     tabCoach: 'المدرب',
     tabPuzzles: 'حل الألغاز',
+    tabKeyVault: 'مفاتيح التشفير',
 
     coachTitle: 'المدرب التفاعلي للتكتيكات',
     coachSubtitle: 'تدرّب على الشوكة والربط وكشف الهجوم ومات في نقلة ومات الصف الأخير مع تقييم Stockfish الفوري.',
@@ -792,6 +892,91 @@ def analyze_and_explain(uci_move):
       `تلميح المدرب: النقلة المقترحة هي ${san} (من ${from} إلى ${to}).`,
     playAiDefaultTip: 'راقب شريط التقييم على جانب الرقعة أو اطلب «تلميح المدرب» في أي لحظة.',
     playAiLastAiMove: (san) => `لعب Stockfish نقلة ${san}.`,
+
+    openingsTitle: 'موسوعة تعلّم افتتاحيات الشطرنج التفاعلية',
+    openingsSubtitle:
+      'اختر أي افتتاح من القائمة أو التصنيفات وتدرّج عبر نقلاته على الرقعة مع شرح مكتوب لخطة كل نقلة.',
+    openingsCategoryAll: 'جميع الافتتاحيات',
+    openingsCategories: {
+      open: 'مفتوحة (1.e4 e5)',
+      semiOpen: 'شبه مفتوحة (1.e4 ...)',
+      closed: 'مغلقة (1.d4 d5)',
+      indian: 'الدفاعات الهندية (1.d4 Nf6)',
+      flank: 'الأجنحة (1.c4 / 1.Nf3)',
+    },
+    openingsSelectLabel: 'اختر الافتتاح للدراسة:',
+    openingsCountLabel: (count) => `${count} افتتاحية`,
+    openingsResetBtn: 'البداية',
+    openingsPrevBtn: 'السابقة',
+    openingsNextBtn: 'التالية',
+    openingsAutoPlayBtn: 'تشغيل تلقائي',
+    openingsPauseBtn: 'إيقاف مؤقت',
+    openingsFlipBtn: 'قلب الرقعة',
+    openingsArrowBtn: 'سهم النقلة',
+    openingsSummaryTitle: 'الفكرة الاستراتيجية للافتتاح',
+    openingsWhitePlanLabel: 'خطة الأبيض',
+    openingsBlackPlanLabel: 'خطة الأسود',
+    openingsMoveExplanationTitle: 'الشرح المكتوب للنقلة الحالية',
+    openingsStartHint:
+      'الرقعة جاهزة في الوضعية الابتدائية. اضغط «التالية» أو حرّك القطعة مباشرة لتعلّم النقلة الأولى من هذا الافتتاح.',
+    openingsCompletedNote:
+      'أحسنت! اكتمل الخط الرئيسي لهذا الافتتاح. يمكنك الرجوع لأي نقلة أدناه أو اختيار افتتاح جديد.',
+    openingsExpectedNextLabel: (san) => `النقلة النظرية التالية: ${san}`,
+    openingsWrongInteractiveMove: (playedSan, expectedSan) =>
+      `لعبتَ ${playedSan}، والنقلة النظرية في هذا الافتتاح هي ${expectedSan}. يمكنك تفعيل «سهم النقلة» أو الضغط على «التالية».`,
+    openingsMovesTimelineTitle: 'تسلسل نقلات الافتتاح (اضغط لأي نقلة)',
+    openingsStepCounter: (current, total) => `النقلة ${current} من ${total}`,
+
+    keyVaultTitle: 'نظام مفاتيح التشفير المقاوم للتزوير والهندسة العكسية',
+    keyVaultSubtitle:
+      'توليد مفاتيح Ed25519 غير قابلة للتزوير وتغليفها في ذاكرة الخادم بـ AES-256-GCM و HKDF-SHA512 مع تعتيم الشيفرة وتدوير دوري تلقائي وبرمجي.',
+    keyVaultAuthClaimTitle: 'إعداد رمز مسؤول تدوير المفاتيح (للمرة الأولى)',
+    keyVaultAuthClaimHint:
+      'أنشئ رمز مرور قوياً (8 أحرف على الأقل) لحماية عمليات التدوير وتعديل السياسة، أو اضبط KEY_ADMIN_PASSCODE في إعدادات الخادم.',
+    keyVaultAuthLoginTitle: 'فتح صلاحية إدارة وتدوير المفاتيح',
+    keyVaultAuthLoginHint:
+      'أدخل رمز المسؤول للحصول على جلسة Bearer مؤقتة في الذاكرة فقط (لا تُحفظ في المتصفح).',
+    keyVaultPasscodePlaceholder: 'أدخل رمز مرور المسؤول...',
+    keyVaultClaimBtn: 'تعيين الرمز والفتح',
+    keyVaultUnlockBtn: 'فتح الإدارة',
+    keyVaultLockBtn: 'قفل الجلسة',
+    keyVaultUnlockedBadge: 'جلسة إدارة موثقة',
+    keyVaultLockedHint: 'افتح صلاحية المسؤول أعلاه لتدوير المفاتيح أو تعديل فترة التحديث الدوري.',
+    keyVaultActiveEpochTitle: 'المفتاح النشط الحالي (Active Epoch)',
+    keyVaultKeyIdLabel: 'معرّف المفتاح (KID)',
+    keyVaultAlgorithmLabel: 'حزمة التشفير والعزل',
+    keyVaultFingerprintLabel: 'بصمة المفتاح العام (SHA-256)',
+    keyVaultNextRotationLabel: 'التدوير التلقائي القادم خلال',
+    keyVaultLineageLabel: 'سلسلة الإسناد غير القابلة للتزوير',
+    keyVaultLineageGenesis: 'حقبة تأسيسية أولى (Genesis Epoch)',
+    keyVaultLineageSignedBy: (prevKid) => `موقّع رقمياً بالمفتاح السابق ${prevKid}`,
+    keyVaultRotationControlsTitle: 'التحديث والتغيير الدوري للمفاتيح (Rotation Policy)',
+    keyVaultRotateNowBtn: 'تدوير المفاتيح الآن',
+    keyVaultRotatingBtn: 'جاري التدوير...',
+    keyVaultAutoRotateLabel: 'تفعيل التحديث الدوري التلقائي',
+    keyVaultIntervalLabel: 'فترة تغيير المفتاح',
+    keyVaultGraceLabel: 'فترة سماح المفتاح السابق',
+    keyVaultSavePolicyBtn: 'حفظ سياسة التدوير',
+    keyVaultPolicySaved: 'تم تحديث جدول التدوير الدوري بنجاح.',
+    keyVaultTokenLabTitle: 'مختبر التوقيع وكشف التزوير (Anti-Forgery)',
+    keyVaultIssueTokenBtn: 'إصدار رمز موقّع بـ Ed25519',
+    keyVaultTamperBtn: 'محاكاة تزوير (تعديل حرف)',
+    keyVaultVerifyBtn: 'التحقق من التوقيع',
+    keyVaultTokenPlaceholder: 'اضغط «إصدار رمز موقّع» أو الصق رمزاً للتحقق من صحته...',
+    keyVaultVerifiedValid: 'التوقيع صحيح وأصلي',
+    keyVaultVerifiedInvalid: 'مرفوض — تزوير أو انتهاء صلاحية',
+    keyVaultShieldTitle: 'طبقات التعتيم ومقاومة الهندسة العكسية النشطة',
+    keyVaultShieldItems: {
+      memorySeal: 'تغليف المفاتيح الخاصة في الخادم بـ AES-256-GCM + قناع XOR متطاير مع تصفير الذاكرة عند التقاعد',
+      nonExtractable: 'مفتاح إثبات الحيازة WebCrypto ECDSA P-256 غير قابل للاستخراج (extractable=false)',
+      obfuscatedShards: 'تفكيك ثوابت البروتوكول إلى شظايا مشفّرة بخوارزمية Affine + XOR تُركّب وقت التشغيل فقط',
+      antiReplay: 'منع إعادة التشغيل (Nonce أحادي الاستخدام + نافذة زمنية صارمة ±120 ثانية)',
+      runtimeIntegrity: 'فحص سلامة بيئة التشفير الأصلية وكشف التوقف/التلاعب وقت التشغيل',
+    },
+    keyVaultStatusActive: 'نشط',
+    keyVaultStatusGrace: 'فترة سماح',
+    keyVaultStatusRetired: 'متقاعد وممسوح',
+    keyVaultAuditTitle: 'سجل حقب المفاتيح وسلسلة التدوير',
   },
 
   en: {
@@ -941,6 +1126,20 @@ def analyze_and_explain(uci_move):
     stockfishWebsiteBtn: 'Stockfish Website',
     verifyLocalEngineBtn: 'Verify Local Engine',
     verifyingLocalEngineBtn: 'Verifying...',
+    autoUpdateStockfishBtn: 'Auto-Update Stockfish',
+    updatingStockfishBtn: 'Updating...',
+    stockfishInstalledBadge: (version, officialTag) =>
+      officialTag
+        ? `Installed: v${version} · Official: ${officialTag}`
+        : `Installed: v${version}`,
+    stockfishUpdateAvailableBadge: (latest) => `Official update available: v${latest}`,
+    stockfishUpdateSuccess: (version, filesCount) =>
+      `Stockfish updated from official release (v${version} · ${filesCount} SHA-512 verified files) and reloaded.`,
+    stockfishUpdateFailed: (error) => `Auto-update failed: ${error}`,
+    stockfishAuthClaimTitle: 'Set a passcode (8+ chars) to authorize engine file updates:',
+    stockfishAuthLoginTitle: 'Enter admin passcode to authorize Stockfish auto-update:',
+    stockfishAuthPasscodePlaceholder: 'Admin passcode...',
+    stockfishAuthConfirmBtn: 'Verify & Update',
     localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
       `Local verified (${backend}) · test move: ${bestMove} (${latencyMs}ms)`,
     localEngineVerifyFailed: (error) => `Local verification failed: ${error}`,
@@ -1093,6 +1292,7 @@ def analyze_and_explain(uci_move):
     tabAnalyzer: 'Board & Vision',
     tabCoach: 'Coach',
     tabPuzzles: 'Solve Puzzles',
+    tabKeyVault: 'Key Vault',
 
     coachTitle: 'Interactive Tactics Coach',
     coachSubtitle: 'Practice forks, pins, discovered attacks, mate in 1, and back-rank mates with instant Stockfish feedback.',
@@ -1198,6 +1398,91 @@ def analyze_and_explain(uci_move):
       `Coach Hint: Recommended move is ${san} (${from} → ${to}).`,
     playAiDefaultTip: 'Watch the evaluation bar alongside the board or tap Coach Hint anytime.',
     playAiLastAiMove: (san) => `Stockfish played ${san}.`,
+
+    openingsTitle: 'Interactive Chess Openings Academy',
+    openingsSubtitle:
+      'Select any chess opening below and step through its main line on the board with written strategic and move-by-move explanations.',
+    openingsCategoryAll: 'All Openings',
+    openingsCategories: {
+      open: 'Open (1.e4 e5)',
+      semiOpen: 'Semi-Open (1.e4 ...)',
+      closed: 'Closed (1.d4 d5)',
+      indian: 'Indian Defenses (1.d4 Nf6)',
+      flank: 'Flank (1.c4 / 1.Nf3)',
+    },
+    openingsSelectLabel: 'Choose an Opening to Learn:',
+    openingsCountLabel: (count) => `${count} Openings`,
+    openingsResetBtn: 'Start',
+    openingsPrevBtn: 'Previous',
+    openingsNextBtn: 'Next',
+    openingsAutoPlayBtn: 'Auto-Play',
+    openingsPauseBtn: 'Pause',
+    openingsFlipBtn: 'Flip Board',
+    openingsArrowBtn: 'Move Arrow',
+    openingsSummaryTitle: 'Strategic Overview',
+    openingsWhitePlanLabel: "White's Plan",
+    openingsBlackPlanLabel: "Black's Plan",
+    openingsMoveExplanationTitle: 'Written Explanation for Current Move',
+    openingsStartHint:
+      'Starting position ready. Press "Next" or move the piece directly on the board to practice the first move of this opening.',
+    openingsCompletedNote:
+      'Well done! You completed the main line of this opening. Click any move below to review or pick another opening.',
+    openingsExpectedNextLabel: (san) => `Next theoretical move: ${san}`,
+    openingsWrongInteractiveMove: (playedSan, expectedSan) =>
+      `You played ${playedSan}, while the book move here is ${expectedSan}. Toggle "Move Arrow" or press "Next".`,
+    openingsMovesTimelineTitle: 'Opening Move Sequence (click any step)',
+    openingsStepCounter: (current, total) => `Step ${current} / ${total}`,
+
+    keyVaultTitle: 'Unforgeable Key Vault & Anti-Reverse Shield',
+    keyVaultSubtitle:
+      'Ed25519 unforgeable signing keys sealed on the server with AES-256-GCM & HKDF-SHA512, paired with runtime obfuscation and automated periodic rotation.',
+    keyVaultAuthClaimTitle: 'First-Run Key Admin Setup',
+    keyVaultAuthClaimHint:
+      'Set a strong passcode (min 8 chars) to authorize key rotations and schedule changes, or configure KEY_ADMIN_PASSCODE in server secrets.',
+    keyVaultAuthLoginTitle: 'Unlock Key Rotation Controls',
+    keyVaultAuthLoginHint:
+      'Enter your admin passcode to obtain an in-memory Bearer session token (never stored in browser storage).',
+    keyVaultPasscodePlaceholder: 'Enter admin passcode...',
+    keyVaultClaimBtn: 'Claim & Unlock',
+    keyVaultUnlockBtn: 'Unlock Admin',
+    keyVaultLockBtn: 'Lock Session',
+    keyVaultUnlockedBadge: 'Admin Session Active',
+    keyVaultLockedHint: 'Unlock admin access above to rotate keys or adjust periodic rotation intervals.',
+    keyVaultActiveEpochTitle: 'Current Active Key Epoch',
+    keyVaultKeyIdLabel: 'Key ID (KID)',
+    keyVaultAlgorithmLabel: 'Cryptographic Suite',
+    keyVaultFingerprintLabel: 'Public Key Fingerprint (SHA-256)',
+    keyVaultNextRotationLabel: 'Next Auto-Rotation In',
+    keyVaultLineageLabel: 'Unforgeable Chain Proof',
+    keyVaultLineageGenesis: 'Genesis Bootstrap Epoch',
+    keyVaultLineageSignedBy: (prevKid) => `Cryptographically signed by ${prevKid}`,
+    keyVaultRotationControlsTitle: 'Programmatic & Periodic Rotation Policy',
+    keyVaultRotateNowBtn: 'Rotate Keys Now',
+    keyVaultRotatingBtn: 'Rotating...',
+    keyVaultAutoRotateLabel: 'Enable Periodic Auto-Rotation',
+    keyVaultIntervalLabel: 'Rotation Interval',
+    keyVaultGraceLabel: 'Previous Key Grace Window',
+    keyVaultSavePolicyBtn: 'Update Rotation Policy',
+    keyVaultPolicySaved: 'Rotation schedule updated successfully.',
+    keyVaultTokenLabTitle: 'Unforgeable Signing & Anti-Tamper Lab',
+    keyVaultIssueTokenBtn: 'Issue Ed25519 PoP Token',
+    keyVaultTamperBtn: 'Simulate Forgery (Alter 1 Byte)',
+    keyVaultVerifyBtn: 'Verify Signature',
+    keyVaultTokenPlaceholder: 'Issue a signed token or paste one here to test verification...',
+    keyVaultVerifiedValid: 'Authentic Signature Verified',
+    keyVaultVerifiedInvalid: 'Rejected — Tampered or Expired',
+    keyVaultShieldTitle: 'Active Obfuscation & Anti-Reverse-Engineering Layers',
+    keyVaultShieldItems: {
+      memorySeal: 'Server private keys sealed via AES-256-GCM + volatile XOR split mask with memory wiping on retirement',
+      nonExtractable: 'Non-extractable WebCrypto ECDSA P-256 Proof-of-Possession key (extractable=false)',
+      obfuscatedShards: 'Protocol constants split into affine + XOR obfuscated shards reconstructed only transiently',
+      antiReplay: 'Single-use CSPRNG nonce tracking + strict ±120s timestamp window',
+      runtimeIntegrity: 'Native SubtleCrypto integrity verification & debugger timing-anomaly detection',
+    },
+    keyVaultStatusActive: 'Active',
+    keyVaultStatusGrace: 'Grace Window',
+    keyVaultStatusRetired: 'Retired & Wiped',
+    keyVaultAuditTitle: 'Key Rotation Lineage & Epoch Audit Log',
   },
 
   ru: {
@@ -1347,6 +1632,20 @@ def analyze_and_explain(uci_move):
     stockfishWebsiteBtn: 'Сайт Stockfish',
     verifyLocalEngineBtn: 'Проверить локально',
     verifyingLocalEngineBtn: 'Проверка...',
+    autoUpdateStockfishBtn: 'Автообновление Stockfish',
+    updatingStockfishBtn: 'Обновление...',
+    stockfishInstalledBadge: (version, officialTag) =>
+      officialTag
+        ? `Установлен: v${version} · Офиц.: ${officialTag}`
+        : `Версия: v${version}`,
+    stockfishUpdateAvailableBadge: (latest) => `Доступно обновление: v${latest}`,
+    stockfishUpdateSuccess: (version, filesCount) =>
+      `Stockfish обновлён с официального релиза (v${version} · ${filesCount} файлов SHA-512) и перезапущен.`,
+    stockfishUpdateFailed: (error) => `Ошибка автообновления: ${error}`,
+    stockfishAuthClaimTitle: 'Задайте код доступа (от 8 символов) для защиты обновления движка:',
+    stockfishAuthLoginTitle: 'Введите код доступа для подтверждения обновления Stockfish:',
+    stockfishAuthPasscodePlaceholder: 'Код доступа...',
+    stockfishAuthConfirmBtn: 'Подтвердить',
     localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
       `Проверено локально (${backend}) · тест: ${bestMove} (${latencyMs}мс)`,
     localEngineVerifyFailed: (error) => `Ошибка локальной проверки: ${error}`,
@@ -1499,6 +1798,7 @@ def analyze_and_explain(uci_move):
     tabAnalyzer: 'Доска и зрение',
     tabCoach: 'Тренер',
     tabPuzzles: 'Задачи',
+    tabKeyVault: 'Крипто-ключи',
 
     coachTitle: 'Интерактивный тактический тренер',
     coachSubtitle: 'Тренируйте вилки, связки, вскрытые нападения, мат в 1 ход и мат по последней горизонтали с оценкой Stockfish.',
@@ -1604,6 +1904,91 @@ def analyze_and_explain(uci_move):
       `Подсказка тренера: лучший ход ${san} (${from} → ${to}).`,
     playAiDefaultTip: 'Следите за шкалой оценки у края доски или нажмите «Подсказка тренера».',
     playAiLastAiMove: (san) => `Stockfish сыграл ${san}.`,
+
+    openingsTitle: 'Интерактивный справочник шахматных дебютов',
+    openingsSubtitle:
+      'Выберите любой дебют и изучайте его ходы на доске с подробным текстовым объяснением каждого шага.',
+    openingsCategoryAll: 'Все дебюты',
+    openingsCategories: {
+      open: 'Открытые (1.e4 e5)',
+      semiOpen: 'Полуоткрытые (1.e4 ...)',
+      closed: 'Закрытые (1.d4 d5)',
+      indian: 'Индийские защиты (1.d4 Nf6)',
+      flank: 'Фланговые (1.c4 / 1.Nf3)',
+    },
+    openingsSelectLabel: 'Выберите дебют для изучения:',
+    openingsCountLabel: (count) => `${count} деб.`,
+    openingsResetBtn: 'В начало',
+    openingsPrevBtn: 'Назад',
+    openingsNextBtn: 'Вперёд',
+    openingsAutoPlayBtn: 'Автопоказ',
+    openingsPauseBtn: 'Пауза',
+    openingsFlipBtn: 'Перевернуть',
+    openingsArrowBtn: 'Стрелка хода',
+    openingsSummaryTitle: 'Стратегическая идея дебюта',
+    openingsWhitePlanLabel: 'План белых',
+    openingsBlackPlanLabel: 'План чёрных',
+    openingsMoveExplanationTitle: 'Письменное объяснение текущего хода',
+    openingsStartHint:
+      'Начальная позиция готова. Нажмите «Вперёд» или сделайте первый ход на доске вручную.',
+    openingsCompletedNote:
+      'Отлично! Основная линия дебюта изучена. Выберите любой ход ниже или другой дебют.',
+    openingsExpectedNextLabel: (san) => `Следующий ход по теории: ${san}`,
+    openingsWrongInteractiveMove: (playedSan, expectedSan) =>
+      `Вы сыграли ${playedSan}, но в этом дебюте теоретический ход — ${expectedSan}.`,
+    openingsMovesTimelineTitle: 'Последовательность ходов дебюта',
+    openingsStepCounter: (current, total) => `Ход ${current} из ${total}`,
+
+    keyVaultTitle: 'Защищённая система криптографических ключей',
+    keyVaultSubtitle:
+      'Неподделываемые ключи Ed25519 на сервере с шифрованием памяти AES-256-GCM и HKDF-SHA512, обфускацией и автоматической периодической ротацией.',
+    keyVaultAuthClaimTitle: 'Первичная настройка пароля администратора',
+    keyVaultAuthClaimHint:
+      'Задайте надёжный пароль (от 8 символов) для управления ротацией или укажите KEY_ADMIN_PASSCODE в переменных сервера.',
+    keyVaultAuthLoginTitle: 'Разблокировка управления ключами',
+    keyVaultAuthLoginHint:
+      'Введите пароль администратора для получения токена сессии только в оперативной памяти.',
+    keyVaultPasscodePlaceholder: 'Введите пароль администратора...',
+    keyVaultClaimBtn: 'Установить и войти',
+    keyVaultUnlockBtn: 'Войти',
+    keyVaultLockBtn: 'Заблокировать',
+    keyVaultUnlockedBadge: 'Доступ открыт',
+    keyVaultLockedHint: 'Войдите выше, чтобы вращать ключи вручную или менять интервал ротации.',
+    keyVaultActiveEpochTitle: 'Текущая активная эпоха ключа',
+    keyVaultKeyIdLabel: 'Идентификатор ключа (KID)',
+    keyVaultAlgorithmLabel: 'Криптографический стек',
+    keyVaultFingerprintLabel: 'Отпечаток открытого ключа (SHA-256)',
+    keyVaultNextRotationLabel: 'Следующая авторотация через',
+    keyVaultLineageLabel: 'Цепочка подписи ротации',
+    keyVaultLineageGenesis: 'Начальная эпоха (Genesis)',
+    keyVaultLineageSignedBy: (prevKid) => `Подписано предыдущим ключом ${prevKid}`,
+    keyVaultRotationControlsTitle: 'Политика периодической ротации ключей',
+    keyVaultRotateNowBtn: 'Сменить ключи сейчас',
+    keyVaultRotatingBtn: 'Ротация...',
+    keyVaultAutoRotateLabel: 'Включить авторотацию по расписанию',
+    keyVaultIntervalLabel: 'Интервал смены ключа',
+    keyVaultGraceLabel: 'Окно совместимости старого ключа',
+    keyVaultSavePolicyBtn: 'Сохранить расписание',
+    keyVaultPolicySaved: 'Расписание ротации обновлено.',
+    keyVaultTokenLabTitle: 'Лаборатория подписей и защиты от подделки',
+    keyVaultIssueTokenBtn: 'Выпустить Ed25519 токен',
+    keyVaultTamperBtn: 'Имитация подделки (1 байт)',
+    keyVaultVerifyBtn: 'Проверить подпись',
+    keyVaultTokenPlaceholder: 'Выпустите токен или вставьте сюда для проверки...',
+    keyVaultVerifiedValid: 'Подлинная подпись подтверждена',
+    keyVaultVerifiedInvalid: 'Отклонено — подделка или истёк срок',
+    keyVaultShieldTitle: 'Механизмы обфускации и защиты от реверс-инжиниринга',
+    keyVaultShieldItems: {
+      memorySeal: 'Закрытые ключи на сервере запечатаны AES-256-GCM + XOR-маской с занулением буферов при выводе',
+      nonExtractable: 'Неизвлекаемый ключ WebCrypto ECDSA P-256 (extractable=false)',
+      obfuscatedShards: 'Константы протокола скрыты в аффинно-XOR фрагментах и собираются лишь в момент подписи',
+      antiReplay: 'Одноразовые крипто-nonce + жёсткое окно времени ±120 сек',
+      runtimeIntegrity: 'Проверка целостности нативного SubtleCrypto и контроль задержек отладчика',
+    },
+    keyVaultStatusActive: 'Активен',
+    keyVaultStatusGrace: 'Переходный период',
+    keyVaultStatusRetired: 'Уничтожен',
+    keyVaultAuditTitle: 'Журнал эпох и цепочка ротации ключей',
   },
 
   zh: {
@@ -1750,6 +2135,20 @@ def analyze_and_explain(uci_move):
     stockfishWebsiteBtn: 'Stockfish 官网',
     verifyLocalEngineBtn: '验证本地引擎',
     verifyingLocalEngineBtn: '验证中...',
+    autoUpdateStockfishBtn: '自动更新 Stockfish',
+    updatingStockfishBtn: '正在更新...',
+    stockfishInstalledBadge: (version, officialTag) =>
+      officialTag
+        ? `当前: v${version} · 官方: ${officialTag}`
+        : `已安装: v${version}`,
+    stockfishUpdateAvailableBadge: (latest) => `有官方新版本: v${latest}`,
+    stockfishUpdateSuccess: (version, filesCount) =>
+      `已从官方源更新 Stockfish（v${version} · ${filesCount} 个 SHA-512 校验文件）并重新加载。`,
+    stockfishUpdateFailed: (error) => `自动更新失败: ${error}`,
+    stockfishAuthClaimTitle: '设置管理员口令（至少8位）以授权更新引擎文件：',
+    stockfishAuthLoginTitle: '输入管理员口令以确认自动更新 Stockfish：',
+    stockfishAuthPasscodePlaceholder: '管理员口令...',
+    stockfishAuthConfirmBtn: '验证并更新',
     localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
       `本地验证通过 (${backend}) · 测试着法: ${bestMove} (${latencyMs}ms)`,
     localEngineVerifyFailed: (error) => `本地验证失败: ${error}`,
@@ -1897,6 +2296,7 @@ def analyze_and_explain(uci_move):
     tabAnalyzer: '棋盘与识别',
     tabCoach: '战术教练',
     tabPuzzles: '谜题训练',
+    tabKeyVault: '密钥保险库',
 
     coachTitle: '交互式战术教练',
     coachSubtitle: '专项训练捉双、牵制、闪击、一步杀与底线杀，实时结合 Stockfish 局面评估。',
@@ -2001,6 +2401,86 @@ def analyze_and_explain(uci_move):
     playAiHintMessage: (san, from, to) => `教练提示：推荐着法为 ${san}（${from} → ${to}）。`,
     playAiDefaultTip: '关注棋盘侧面的局势评估条，或随时点击“教练提示”。',
     playAiLastAiMove: (san) => `Stockfish 走了 ${san}。`,
+
+    openingsTitle: '国际象棋开局交互学习棋盘',
+    openingsSubtitle: '选择任意开局，结合棋盘演练与逐招文字讲解系统掌握所有主要变化。',
+    openingsCategoryAll: '全部开局',
+    openingsCategories: {
+      open: '开放性开局 (1.e4 e5)',
+      semiOpen: '半开放开局 (1.e4 ...)',
+      closed: '封闭性开局 (1.d4 d5)',
+      indian: '印度防御体系 (1.d4 Nf6)',
+      flank: '侧翼开局 (1.c4 / 1.Nf3)',
+    },
+    openingsSelectLabel: '选择要学习的开局：',
+    openingsCountLabel: (count) => `共 ${count} 个开局`,
+    openingsResetBtn: '回到起点',
+    openingsPrevBtn: '上一步',
+    openingsNextBtn: '下一步',
+    openingsAutoPlayBtn: '自动演示',
+    openingsPauseBtn: '暂停',
+    openingsFlipBtn: '翻转棋盘',
+    openingsArrowBtn: '提示箭头',
+    openingsSummaryTitle: '开局核心战略思路',
+    openingsWhitePlanLabel: '白方计划',
+    openingsBlackPlanLabel: '黑方计划',
+    openingsMoveExplanationTitle: '当前着法文字讲解',
+    openingsStartHint: '已就绪。点击“下一步”或在棋盘上直接走棋来学习该开局第一招。',
+    openingsCompletedNote: '太棒了！本开局主线已学习完毕，可点击下方着法复盘或切换其他开局。',
+    openingsExpectedNextLabel: (san) => `下一标准着法：${san}`,
+    openingsWrongInteractiveMove: (playedSan, expectedSan) =>
+      `你走了 ${playedSan}，但该开局定式着法是 ${expectedSan}。可开启“提示箭头”或点击“下一步”。`,
+    openingsMovesTimelineTitle: '开局着法序列（点击可跳转）',
+    openingsStepCounter: (current, total) => `第 ${current} / ${total} 步`,
+
+    keyVaultTitle: '防伪造与抗逆向加密密钥系统',
+    keyVaultSubtitle:
+      '服务端采用 Ed25519 不可伪造签名与 AES-256-GCM + HKDF-SHA512 内存封装，结合代码混淆和可编程定期轮换机制。',
+    keyVaultAuthClaimTitle: '首次设置密钥管理员口令',
+    keyVaultAuthClaimHint: '请设置至少 8 位的管理口令以授权密钥轮换，或在服务端环境变量中配置 KEY_ADMIN_PASSCODE。',
+    keyVaultAuthLoginTitle: '解锁密钥轮换管理权限',
+    keyVaultAuthLoginHint: '输入管理口令以获取仅存于内存的 Bearer 会话令牌。',
+    keyVaultPasscodePlaceholder: '输入管理员口令...',
+    keyVaultClaimBtn: '设置并解锁',
+    keyVaultUnlockBtn: '解锁管理',
+    keyVaultLockBtn: '锁定会话',
+    keyVaultUnlockedBadge: '管理员已验证',
+    keyVaultLockedHint: '请先在上方解锁管理员权限，再执行手动轮换或调整自动轮换周期。',
+    keyVaultActiveEpochTitle: '当前活跃密钥纪元 (Active Epoch)',
+    keyVaultKeyIdLabel: '密钥编号 (KID)',
+    keyVaultAlgorithmLabel: '加密套件',
+    keyVaultFingerprintLabel: '公钥指纹 (SHA-256)',
+    keyVaultNextRotationLabel: '距下次自动轮换',
+    keyVaultLineageLabel: '防伪轮换签名链',
+    keyVaultLineageGenesis: '创世初始纪元 (Genesis)',
+    keyVaultLineageSignedBy: (prevKid) => `已由上一代密钥 ${prevKid} 签名背书`,
+    keyVaultRotationControlsTitle: '定期编程轮换策略',
+    keyVaultRotateNowBtn: '立即轮换密钥',
+    keyVaultRotatingBtn: '正在轮换...',
+    keyVaultAutoRotateLabel: '启用定期自动轮换',
+    keyVaultIntervalLabel: '密钥更换周期',
+    keyVaultGraceLabel: '旧密钥宽限窗口',
+    keyVaultSavePolicyBtn: '更新轮换策略',
+    keyVaultPolicySaved: '定期轮换计划已更新。',
+    keyVaultTokenLabTitle: '不可伪造签名与篡改检测实验室',
+    keyVaultIssueTokenBtn: '签发 Ed25519 令牌',
+    keyVaultTamperBtn: '模拟伪造（篡改 1 字节）',
+    keyVaultVerifyBtn: '验证签名',
+    keyVaultTokenPlaceholder: '签发令牌或粘贴令牌以测试密码学验证...',
+    keyVaultVerifiedValid: '签名真实有效',
+    keyVaultVerifiedInvalid: '验证拒绝 — 已篡改或已过期',
+    keyVaultShieldTitle: '混淆与抗逆向工程防护层',
+    keyVaultShieldItems: {
+      memorySeal: '服务端私钥采用 AES-256-GCM + 易失性 XOR 分片掩码封装，退役时立即内存清零',
+      nonExtractable: '浏览器持有不可导出 WebCrypto ECDSA P-256 持有证明密钥 (extractable=false)',
+      obfuscatedShards: '核心协议常量以仿射+XOR混淆分片存储，仅在运行时瞬态还原',
+      antiReplay: '一次性 CSPRNG Nonce 校验 + ±120 秒严格时间窗口防重放',
+      runtimeIntegrity: '原生 SubtleCrypto 完整性校验与调试器停顿异常监测',
+    },
+    keyVaultStatusActive: '活跃',
+    keyVaultStatusGrace: '宽限期',
+    keyVaultStatusRetired: '已退役清零',
+    keyVaultAuditTitle: '密钥纪元与轮换链审计记录',
   },
 
   fr: {
@@ -2150,6 +2630,20 @@ def analyze_and_explain(uci_move):
     stockfishWebsiteBtn: 'Site Stockfish',
     verifyLocalEngineBtn: 'Vérifier moteur local',
     verifyingLocalEngineBtn: 'Vérification...',
+    autoUpdateStockfishBtn: 'Mise à jour auto Stockfish',
+    updatingStockfishBtn: 'Mise à jour...',
+    stockfishInstalledBadge: (version, officialTag) =>
+      officialTag
+        ? `Installé : v${version} · Officiel : ${officialTag}`
+        : `Installé : v${version}`,
+    stockfishUpdateAvailableBadge: (latest) => `Mise à jour officielle : v${latest}`,
+    stockfishUpdateSuccess: (version, filesCount) =>
+      `Stockfish mis à jour depuis la source officielle (v${version} · ${filesCount} fichiers vérifiés SHA-512) et rechargé.`,
+    stockfishUpdateFailed: (error) => `Échec de mise à jour : ${error}`,
+    stockfishAuthClaimTitle: 'Définissez un code (8+ caractères) pour autoriser la mise à jour :',
+    stockfishAuthLoginTitle: 'Entrez le code administrateur pour lancer la mise à jour :',
+    stockfishAuthPasscodePlaceholder: 'Code administrateur...',
+    stockfishAuthConfirmBtn: 'Confirmer',
     localEngineVerifiedOk: (backend, bestMove, latencyMs) =>
       `Vérifié localement (${backend}) · coup test : ${bestMove} (${latencyMs}ms)`,
     localEngineVerifyFailed: (error) => `Échec de vérification locale : ${error}`,
@@ -2303,6 +2797,7 @@ def analyze_and_explain(uci_move):
     tabAnalyzer: 'Échiquier & Vision',
     tabCoach: 'Coach',
     tabPuzzles: 'Problèmes',
+    tabKeyVault: 'Clés Crypto',
 
     coachTitle: 'Coach Tactique Interactif',
     coachSubtitle: 'Entraînez-vous aux fourchettes, clouages, découvertes, mats en 1 coup et mats du couloir avec Stockfish.',
@@ -2408,6 +2903,91 @@ def analyze_and_explain(uci_move):
       `Indice du coach : coup recommandé ${san} (${from} → ${to}).`,
     playAiDefaultTip: 'Observez la barre d’évaluation ou demandez un indice à tout moment.',
     playAiLastAiMove: (san) => `Stockfish a joué ${san}.`,
+
+    openingsTitle: 'Académie interactive des ouvertures',
+    openingsSubtitle:
+      'Sélectionnez n’importe quelle ouverture et parcourez ses coups sur l’échiquier avec des explications écrites détaillées.',
+    openingsCategoryAll: 'Toutes les ouvertures',
+    openingsCategories: {
+      open: 'Jeux ouverts (1.e4 e5)',
+      semiOpen: 'Jeux semi-ouverts (1.e4 ...)',
+      closed: 'Jeux fermés (1.d4 d5)',
+      indian: 'Défenses indiennes (1.d4 Cf6)',
+      flank: 'Ouvertures de flanc (1.c4 / 1.Cf3)',
+    },
+    openingsSelectLabel: 'Choisir une ouverture à étudier :',
+    openingsCountLabel: (count) => `${count} ouvertures`,
+    openingsResetBtn: 'Début',
+    openingsPrevBtn: 'Précédent',
+    openingsNextBtn: 'Suivant',
+    openingsAutoPlayBtn: 'Lecture auto',
+    openingsPauseBtn: 'Pause',
+    openingsFlipBtn: 'Retourner',
+    openingsArrowBtn: 'Flèche du coup',
+    openingsSummaryTitle: 'Idée stratégique de l’ouverture',
+    openingsWhitePlanLabel: 'Plan des Blancs',
+    openingsBlackPlanLabel: 'Plan des Noirs',
+    openingsMoveExplanationTitle: 'Explication écrite du coup actuel',
+    openingsStartHint:
+      'Position initiale prête. Cliquez sur « Suivant » ou jouez directement le premier coup sur l’échiquier.',
+    openingsCompletedNote:
+      'Bravo ! Ligne principale terminée. Cliquez sur un coup ci-dessous ou choisissez une autre ouverture.',
+    openingsExpectedNextLabel: (san) => `Prochain coup théorique : ${san}`,
+    openingsWrongInteractiveMove: (playedSan, expectedSan) =>
+      `Vous avez joué ${playedSan}, mais le coup théorique est ${expectedSan}. Activez « Flèche du coup » ou cliquez sur « Suivant ».`,
+    openingsMovesTimelineTitle: 'Séquence des coups (cliquez pour naviguer)',
+    openingsStepCounter: (current, total) => `Coup ${current} / ${total}`,
+
+    keyVaultTitle: 'Coffre de clés infalsifiable et anti-rétro-ingénierie',
+    keyVaultSubtitle:
+      'Clés Ed25519 infalsifiables scellées côté serveur (AES-256-GCM + HKDF-SHA512), combinées à l’obfuscation et à la rotation périodique automatisée.',
+    keyVaultAuthClaimTitle: 'Configuration initiale du code administrateur',
+    keyVaultAuthClaimHint:
+      'Définissez un code secret robuste (8 caractères min.) ou configurez KEY_ADMIN_PASSCODE côté serveur.',
+    keyVaultAuthLoginTitle: 'Déverrouiller la gestion et la rotation des clés',
+    keyVaultAuthLoginHint:
+      'Saisissez le code administrateur pour obtenir un jeton Bearer conservé uniquement en mémoire.',
+    keyVaultPasscodePlaceholder: 'Code administrateur...',
+    keyVaultClaimBtn: 'Définir et déverrouiller',
+    keyVaultUnlockBtn: 'Déverrouiller',
+    keyVaultLockBtn: 'Verrouiller',
+    keyVaultUnlockedBadge: 'Session admin active',
+    keyVaultLockedHint: 'Déverrouillez l’accès admin ci-dessus pour déclencher une rotation ou modifier la fréquence.',
+    keyVaultActiveEpochTitle: 'Époque de clé active',
+    keyVaultKeyIdLabel: 'Identifiant (KID)',
+    keyVaultAlgorithmLabel: 'Suite cryptographique',
+    keyVaultFingerprintLabel: 'Empreinte publique (SHA-256)',
+    keyVaultNextRotationLabel: 'Prochaine rotation auto dans',
+    keyVaultLineageLabel: 'Preuve de chaîne infalsifiable',
+    keyVaultLineageGenesis: 'Époque initiale (Genesis)',
+    keyVaultLineageSignedBy: (prevKid) => `Signée cryptographiquement par ${prevKid}`,
+    keyVaultRotationControlsTitle: 'Politique de rotation périodique',
+    keyVaultRotateNowBtn: 'Effectuer une rotation',
+    keyVaultRotatingBtn: 'Rotation...',
+    keyVaultAutoRotateLabel: 'Activer la rotation périodique automatique',
+    keyVaultIntervalLabel: 'Intervalle de rotation',
+    keyVaultGraceLabel: 'Fenêtre de grâce précédente',
+    keyVaultSavePolicyBtn: 'Mettre à jour la politique',
+    keyVaultPolicySaved: 'Calendrier de rotation mis à jour.',
+    keyVaultTokenLabTitle: 'Laboratoire de signature et détection de falsification',
+    keyVaultIssueTokenBtn: 'Émettre un jeton Ed25519',
+    keyVaultTamperBtn: 'Simuler une falsification (1 octet)',
+    keyVaultVerifyBtn: 'Vérifier la signature',
+    keyVaultTokenPlaceholder: 'Émettez un jeton signé ou collez-en un ici pour vérifier son authenticité...',
+    keyVaultVerifiedValid: 'Signature authentique vérifiée',
+    keyVaultVerifiedInvalid: 'Rejeté — Falsifié ou expiré',
+    keyVaultShieldTitle: 'Couches actives d’obfuscation et anti-rétro-ingénierie',
+    keyVaultShieldItems: {
+      memorySeal: 'Clés privées scellées en mémoire serveur par AES-256-GCM + masque XOR volatil avec mise à zéro',
+      nonExtractable: 'Clé de preuve de possession WebCrypto ECDSA P-256 non extractible (extractable=false)',
+      obfuscatedShards: 'Constantes de protocole fragmentées via transformation affine + XOR',
+      antiReplay: 'Protection anti-rejeu par nonce CSPRNG unique et fenêtre stricte de ±120s',
+      runtimeIntegrity: 'Vérification d’intégrité SubtleCrypto native et détection d’anomalie temporelle',
+    },
+    keyVaultStatusActive: 'Active',
+    keyVaultStatusGrace: 'Période de grâce',
+    keyVaultStatusRetired: 'Retirée et effacée',
+    keyVaultAuditTitle: 'Journal des époques et chaîne de rotation',
   },
 };
 

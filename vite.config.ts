@@ -13,20 +13,23 @@ export default defineConfig(() => {
       {
         name: 'stockfish-worker-assets',
         configureServer(server) {
+          const runtimeDir = path.resolve(__dirname, '.stockfish-runtime');
           const sfBinDir = path.resolve(__dirname, 'node_modules/stockfish/bin');
-          const allowed = new Set([
-            'stockfish-19-lite-single.js',
-            'stockfish-19-lite-single.wasm',
-            'stockfish-19-asm.js',
-          ]);
+          const safeFilename = /^stockfish[\w.-]*\.(?:js|wasm)$/;
           server.middlewares.use('/stockfish', (req, res, next) => {
             const cleanName = path.basename((req.url ?? '').split('?')[0]);
-            if (!allowed.has(cleanName)) {
+            if (!safeFilename.test(cleanName)) {
               next();
               return;
             }
-            const filePath = path.join(sfBinDir, cleanName);
-            if (!fs.existsSync(filePath)) {
+            const runtimeFile = path.join(runtimeDir, cleanName);
+            const bundledFile = path.join(sfBinDir, cleanName);
+            const filePath = fs.existsSync(runtimeFile)
+              ? runtimeFile
+              : fs.existsSync(bundledFile)
+              ? bundledFile
+              : null;
+            if (!filePath) {
               next();
               return;
             }
@@ -36,7 +39,7 @@ export default defineConfig(() => {
                 ? 'application/wasm'
                 : 'application/javascript; charset=utf-8'
             );
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            res.setHeader('Cache-Control', 'no-cache');
             fs.createReadStream(filePath).pipe(res);
           });
         },
@@ -109,11 +112,12 @@ export default defineConfig(() => {
             },
             {
               urlPattern: /\/stockfish\/.*/i,
-              handler: 'CacheFirst',
+              handler: 'NetworkFirst',
               options: {
                 cacheName: 'stockfish-wasm-cache',
+                networkTimeoutSeconds: 3,
                 expiration: {
-                  maxEntries: 10,
+                  maxEntries: 16,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
                 },
                 cacheableResponse: {
@@ -165,6 +169,20 @@ export default defineConfig(() => {
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+    build: {
+      minify: true,
+      sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('antiReverseGuard')) {
+              return 'security-core';
+            }
+            return undefined;
+          },
+        },
+      },
     },
   };
 });

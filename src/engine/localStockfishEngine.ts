@@ -56,10 +56,12 @@ function formatEvaluationLabel(scoreType: 'cp' | 'mate', whiteVal: number): stri
   return `${sign}${pawns.toFixed(2)}`;
 }
 
-const WORKER_CANDIDATES: { url: string; backend: 'wasm' | 'asm' }[] = [
+const DEFAULT_WORKER_CANDIDATES: { url: string; backend: 'wasm' | 'asm' }[] = [
   { url: '/stockfish/stockfish-19-lite-single.js', backend: 'wasm' },
   { url: '/stockfish/stockfish-19-asm.js', backend: 'asm' },
 ];
+
+const SAFE_JS_FILENAME = /^stockfish[\w.-]*\.js$/;
 
 const VERIFICATION_TEST_FEN =
   'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1';
@@ -74,6 +76,9 @@ class LocalStockfishEngine {
   private queue: Promise<void> = Promise.resolve();
   private lineListeners: Set<(line: string) => void> = new Set();
   private errorListeners: Set<(err: Error) => void> = new Set();
+  private workerCandidates: { url: string; backend: 'wasm' | 'asm' }[] = [
+    ...DEFAULT_WORKER_CANDIDATES,
+  ];
 
   public getActiveBackend(): 'wasm' | 'asm' | null {
     return this.activeBackend;
@@ -110,6 +115,43 @@ class LocalStockfishEngine {
 
   public clearCache(): void {
     this.resetWorker(new Error('تمت إعادة تهيئة ذاكرة محرك Stockfish.'));
+  }
+
+  public reloadWithVersion(
+    cacheBustToken: string,
+    preferredFilenames?: { wasmJs?: string | null; asmJs?: string | null }
+  ): void {
+    const cleanToken = encodeURIComponent(cacheBustToken.trim() || String(Date.now()));
+    const nextCandidates: { url: string; backend: 'wasm' | 'asm' }[] = [];
+
+    const wasmName = preferredFilenames?.wasmJs?.trim();
+    if (wasmName && SAFE_JS_FILENAME.test(wasmName)) {
+      nextCandidates.push({
+        url: `/stockfish/${wasmName}?v=${cleanToken}`,
+        backend: 'wasm',
+      });
+    } else {
+      nextCandidates.push({
+        url: `/stockfish/stockfish-19-lite-single.js?v=${cleanToken}`,
+        backend: 'wasm',
+      });
+    }
+
+    const asmName = preferredFilenames?.asmJs?.trim();
+    if (asmName && SAFE_JS_FILENAME.test(asmName)) {
+      nextCandidates.push({
+        url: `/stockfish/${asmName}?v=${cleanToken}`,
+        backend: 'asm',
+      });
+    } else {
+      nextCandidates.push({
+        url: `/stockfish/stockfish-19-asm.js?v=${cleanToken}`,
+        backend: 'asm',
+      });
+    }
+
+    this.workerCandidates = nextCandidates;
+    this.resetWorker(new Error('تم تحديث محرك Stockfish إلى أحدث إصدار.'));
   }
 
   public async warmup(): Promise<'wasm' | 'asm' | null> {
@@ -252,7 +294,7 @@ class LocalStockfishEngine {
 
     this.initPromise = (async () => {
       let lastError: Error | null = null;
-      for (const candidate of WORKER_CANDIDATES) {
+      for (const candidate of this.workerCandidates) {
         try {
           await this.startWorkerScript(candidate.url);
           this.activeBackend = candidate.backend;

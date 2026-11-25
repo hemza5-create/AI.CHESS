@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
-import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle } from 'lucide-react';
+import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle, ShieldCheck } from 'lucide-react';
 import { LiveVisionStage } from './components/LiveVisionStage.tsx';
 import { DigitalBoard } from './components/DigitalBoard.tsx';
 import { CapturePreviewPanel } from './components/CapturePreviewPanel.tsx';
@@ -12,6 +12,7 @@ import {
   SOLVED_PUZZLES_STORAGE_KEY,
   CURRENT_PUZZLE_STORAGE_KEY,
 } from './components/PuzzlesTab.tsx';
+import { SecurityKeyVaultTab } from './components/SecurityKeyVaultTab.tsx';
 import { LanguageSwitcher } from './components/LanguageSwitcher.tsx';
 import { saveStoredLanguage, useLanguage } from './i18n/LanguageContext.tsx';
 import type { TranslationDictionary } from './i18n/translations.ts';
@@ -90,7 +91,7 @@ async function parseJsonResponse<T>(
 
 export default function App() {
   const { language, meta, t } = useLanguage();
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'analyzer' | 'coach' | 'puzzles'>('analyzer');
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'analyzer' | 'coach' | 'puzzles' | 'keyVault'>('analyzer');
   const [source, setSource] = useState<CaptureSource>('virtual');
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<VisionViewMode>('original');
@@ -1297,7 +1298,7 @@ export default function App() {
 
       {/* Main Workspace Container */}
       <main className="relative z-10 flex-1 max-w-[1440px] w-full mx-auto px-2.5 sm:px-6 py-3.5 sm:py-6 space-y-4 sm:space-y-6">
-        {/* Intro Strip (Compact, direct functional overview + Workspace Controls) */}
+        {/* Intro Strip (Above the photo box) */}
         <section className="relative z-20 flex flex-wrap items-end justify-between gap-3 sm:gap-4 p-3 sm:p-5 rounded-xl border border-slate-400/40 bg-[#0F1522]/25 backdrop-blur-sm shadow-lg">
           <div className="max-w-2xl">
             <h1 className="text-lg sm:text-3xl font-bold text-white leading-snug text-balance">
@@ -1348,6 +1349,15 @@ export default function App() {
           </div>
         </section>
 
+        {/* Clean Image Box (without any text overlay) */}
+        <div className="overflow-hidden rounded-xl border border-slate-400/40 bg-[#0F1522]/20 shadow-lg">
+          <img
+            src="/assets/aistudio/Screenshot_20261125_184553_com_hihonor_photos_SlotAlbumActivity_b33f732c.jpg"
+            alt={t.brandName}
+            className="w-full h-44 sm:h-64 lg:h-80 object-cover object-[center_28%] block select-none"
+          />
+        </div>
+
         {/* Workspace Mode Tabs: Board & Vision | Interactive Coach | Solve Puzzles */}
         <nav
           aria-label={t.tabAnalyzer}
@@ -1391,11 +1401,26 @@ export default function App() {
             <Puzzle className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>{t.tabPuzzles}</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveWorkspaceTab('keyVault')}
+            className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
+              activeWorkspaceTab === 'keyVault'
+                ? 'bg-cyan-400 text-slate-950 shadow-sm'
+                : 'text-slate-100 hover:bg-slate-800/80'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span>{t.tabKeyVault}</span>
+          </button>
         </nav>
 
         {activeWorkspaceTab === 'coach' && <InteractiveCoachTab />}
 
         {activeWorkspaceTab === 'puzzles' && <PuzzlesTab />}
+
+        {activeWorkspaceTab === 'keyVault' && <SecurityKeyVaultTab />}
 
         {activeWorkspaceTab === 'analyzer' && (
           <>
@@ -1535,6 +1560,9 @@ export default function App() {
               localEngineVerify={localEngineVerify}
               isVerifyingEngine={isVerifyingEngine}
               onVerifyLocalEngine={() => void handleVerifyLocalEngine()}
+              onEngineAutoUpdated={() => {
+                void runStockfishAnalysis(chessRef.current.fen(), searchDepth, null);
+              }}
               remoteServerStatus={remoteServerStatus}
               externalServerUrl={externalServerUrl}
               onSaveExternalServerUrl={handleSaveExternalServerUrl}

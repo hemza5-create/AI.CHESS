@@ -15,6 +15,7 @@ import {
 import { COACH_DRILLS, type CoachDrill, type CoachTacticId } from '../data/coachDrills.ts';
 import { TacticalBoard } from './TacticalBoard.tsx';
 import { PlayVsStockfishPanel } from './PlayVsStockfishPanel.tsx';
+import { ChessOpeningsPanel } from './ChessOpeningsPanel.tsx';
 import { localStockfishEngine } from '../engine/localStockfishEngine.ts';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import { playMoveTapSound, unlockAudioContext } from '../utils/soundEffects.ts';
@@ -547,6 +548,9 @@ export const InteractiveCoachTab: React.FC = () => {
       </div>
         </>
       )}
+
+      {/* Interactive Chess Openings Encyclopedia at the bottom of the Coach page */}
+      <ChessOpeningsPanel />
     </section>
   );
 };
