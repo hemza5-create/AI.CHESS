@@ -1,3 +1,7 @@
+/**
+ * @author Hemza Harigui
+ * @fingerprint HH-CVSU-2026
+ */
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
@@ -58,6 +62,24 @@ export default defineConfig(() => {
                 fileName: `stockfish/${f}`,
                 source: fs.readFileSync(src),
               });
+            }
+          }
+        },
+      },
+      {
+        name: 'production-security-sanitizer',
+        apply: 'build',
+        generateBundle(_options, bundle) {
+          for (const fileName of Object.keys(bundle)) {
+            const base = path.basename(fileName).toLowerCase();
+            if (
+              base.endsWith('.map') ||
+              base.startsWith('.env') ||
+              base.endsWith('.pem') ||
+              base.endsWith('.key') ||
+              base.endsWith('.secret')
+            ) {
+              delete bundle[fileName];
             }
           }
         },
@@ -171,8 +193,10 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
     build: {
-      minify: true,
+      minify: 'oxc',
+      cssMinify: true,
       sourcemap: false,
+      reportCompressedSize: false,
       rollupOptions: {
         output: {
           manualChunks(id) {

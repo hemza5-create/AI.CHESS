@@ -1,3 +1,7 @@
+/**
+ * @author Hemza Harigui
+ * @fingerprint HH-CVSU-2026
+ */
 import 'dotenv/config';
 import express from 'express';
 import type { Request, Response } from 'express';
@@ -559,14 +563,28 @@ function getGeminiClient(): GoogleGenAI {
 
 async function startServer() {
   const app = express();
+  const isTrustedRequestOrigin = (req: Request): boolean => {
+    const origin = req.headers.origin;
+    if (!origin || typeof origin !== 'string') {
+      // Non-browser / same-origin calls without Origin header still must pass Bearer verification
+      return true;
+    }
+    const appUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
+    const rawHost = req.headers['x-forwarded-host'] || req.headers.host;
+    const host = Array.isArray(rawHost) ? rawHost[0] : rawHost;
+    return Boolean(
+      (appUrl && origin === appUrl) || (host && origin.endsWith(`://${host}`))
+    );
+  };
+
   app.use((req: Request, res: Response, next: express.NextFunction) => {
     res.setHeader('Permissions-Policy', 'camera=*, microphone=*, display-capture=*');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     if (req.path.startsWith('/api/security') || req.path === '/api/stockfish/auto-update') {
       const origin = req.headers.origin;
-      const appUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
-      const rawHost = req.headers['x-forwarded-host'] || req.headers.host;
-      const host = Array.isArray(rawHost) ? rawHost[0] : rawHost;
-      if (origin && ((appUrl && origin === appUrl) || (host && origin.endsWith(`://${host}`)))) {
+      if (origin && isTrustedRequestOrigin(req)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
       }
@@ -594,6 +612,12 @@ async function startServer() {
     if (!auth || typeof auth !== 'string') return '';
     const match = /^Bearer\s+(.+)$/i.exec(auth.trim());
     return match ? match[1].trim() : '';
+  };
+
+  const getClientRateKey = (req: Request): string => {
+    const forwarded = req.headers['x-forwarded-for'];
+    const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    return (typeof raw === 'string' && raw.split(',')[0].trim()) || req.ip || 'local';
   };
 
   // Serve updated or bundled Stockfish WASM/JS worker files dynamically
@@ -643,6 +667,10 @@ async function startServer() {
 
   // Authenticated Official Stockfish Auto-Update Endpoint
   app.post('/api/stockfish/auto-update', async (req: Request, res: Response) => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'Untrusted origin rejected.' });
+      return;
+    }
     const bearer = extractBearerToken(req);
     if (!cryptoKeyVault.verifyAdminSession(bearer)) {
       res.status(401).json({
@@ -1110,7 +1138,7 @@ async function startServer() {
   // Direct Project Source ZIP Download Endpoint
   app.get('/api/download/app.zip', (_req: Request, res: Response) => {
     try {
-      const rootDir = process.cwd();
+      const rootDir = path.resolve(process.cwd());
       const excludedNames = new Set([
         'node_modules',
         'dist',
@@ -1122,15 +1150,27 @@ async function startServer() {
         '.env.local',
         '.DS_Store',
         '.stockfish-runtime',
+        '.aistudio',
       ]);
 
       const files: { relPath: string; data: Buffer }[] = [];
       const walk = (dir: string, prefix: string) => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (excludedNames.has(entry.name) || entry.name.startsWith('.env.')) {
+          const lower = entry.name.toLowerCase();
+          if (
+            excludedNames.has(entry.name) ||
+            lower.startsWith('.env.') ||
+            lower.endsWith('.pem') ||
+            lower.endsWith('.key') ||
+            lower.endsWith('.secret') ||
+            lower.endsWith('.map')
+          ) {
             continue;
           }
-          const full = path.join(dir, entry.name);
+          const full = path.resolve(dir, entry.name);
+          if (!full.startsWith(rootDir + path.sep)) {
+            continue;
+          }
           const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
           if (entry.isDirectory()) {
             walk(full, rel);
@@ -1225,12 +1265,21 @@ async function startServer() {
     res.json(cryptoKeyVault.getAuthStatus(extractBearerToken(req)));
   });
 
+  app.get('/api/security/ownership', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(cryptoKeyVault.getSignedOwnershipAttestation());
+  });
+
   app.post('/api/security/admin/claim', (req: Request, res: Response) => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'Untrusted origin rejected.' });
+      return;
+    }
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
     const passcode = typeof body.passcode === 'string' ? body.passcode : '';
-    const result = cryptoKeyVault.claimAdminPasscode(passcode);
+    const result = cryptoKeyVault.claimAdminPasscode(passcode, getClientRateKey(req));
     if (!result.ok) {
-      const status = result.error?.includes('already') ? 409 : 400;
+      const status = result.rateLimited ? 429 : result.error?.includes('already') ? 409 : 400;
       res.status(status).json({ error: result.error });
       return;
     }
@@ -1238,11 +1287,15 @@ async function startServer() {
   });
 
   app.post('/api/security/admin/login', (req: Request, res: Response) => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'Untrusted origin rejected.' });
+      return;
+    }
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
     const passcode = typeof body.passcode === 'string' ? body.passcode : '';
-    const result = cryptoKeyVault.loginWithPasscode(passcode);
+    const result = cryptoKeyVault.loginWithPasscode(passcode, getClientRateKey(req));
     if (!result.ok) {
-      res.status(401).json({ error: result.error });
+      res.status(result.rateLimited ? 429 : 401).json({ error: result.error });
       return;
     }
     res.json({ ok: true, token: result.token });
@@ -1322,6 +1375,10 @@ async function startServer() {
   });
 
   app.post('/api/security/rotate', (req: Request, res: Response) => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'Untrusted origin rejected.' });
+      return;
+    }
     const bearer = extractBearerToken(req);
     if (!cryptoKeyVault.verifyAdminSession(bearer)) {
       res.status(401).json({ error: 'Admin authorization required to rotate cryptographic keys.' });
@@ -1341,6 +1398,10 @@ async function startServer() {
   });
 
   app.post('/api/security/policy', (req: Request, res: Response) => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'Untrusted origin rejected.' });
+      return;
+    }
     const bearer = extractBearerToken(req);
     if (!cryptoKeyVault.verifyAdminSession(bearer)) {
       res.status(401).json({ error: 'Admin authorization required to update rotation policy.' });
@@ -1406,8 +1467,25 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
+    app.use((req: Request, res: Response, next: express.NextFunction) => {
+      const lowerPath = req.path.toLowerCase();
+      if (
+        lowerPath.startsWith('/server') ||
+        lowerPath.startsWith('/.env') ||
+        lowerPath.startsWith('/.stockfish-runtime') ||
+        lowerPath.endsWith('.map') ||
+        lowerPath.endsWith('.pem') ||
+        lowerPath.endsWith('.key') ||
+        lowerPath.endsWith('.secret')
+      ) {
+        res.status(404).end();
+        return;
+      }
+      next();
+    });
     app.use(
       express.static(distDir, {
+        dotfiles: 'deny',
         setHeaders: (res, filePath) => {
           if (filePath.endsWith('.wasm')) {
             res.setHeader('Content-Type', 'application/wasm');

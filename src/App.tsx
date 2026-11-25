@@ -1,4 +1,9 @@
+/**
+ * @author Hemza Harigui
+ * @fingerprint HH-CVSU-2026
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type React from 'react';
 import { Chess } from 'chess.js';
 import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle, ShieldCheck } from 'lucide-react';
 import { LiveVisionStage } from './components/LiveVisionStage.tsx';
@@ -13,6 +18,7 @@ import {
   CURRENT_PUZZLE_STORAGE_KEY,
 } from './components/PuzzlesTab.tsx';
 import { SecurityKeyVaultTab } from './components/SecurityKeyVaultTab.tsx';
+import { DeveloperPortalModal } from './components/DeveloperPortalModal.tsx';
 import { LanguageSwitcher } from './components/LanguageSwitcher.tsx';
 import { saveStoredLanguage, useLanguage } from './i18n/LanguageContext.tsx';
 import type { TranslationDictionary } from './i18n/translations.ts';
@@ -195,6 +201,22 @@ export default function App() {
   const [moveSoundEnabled, setMoveSoundEnabled] = useState<boolean>(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const autoSpeakPendingRef = useRef<boolean>(false);
+
+  // Hidden developer portal trigger: 5 consecutive clicks within 1.5s on brand logo/title
+  const [showDeveloperPortal, setShowDeveloperPortal] = useState<boolean>(false);
+  const brandTapTimesRef = useRef<number[]>([]);
+
+  const handleBrandSecretTap = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
+    const now = Date.now();
+    const recent = brandTapTimesRef.current.filter((ts) => now - ts <= 1500);
+    recent.push(now);
+    brandTapTimesRef.current = recent;
+    if (recent.length >= 5) {
+      e.preventDefault();
+      brandTapTimesRef.current = [];
+      setShowDeveloperPortal(true);
+    }
+  }, []);
 
   const stopMediaTracks = useCallback(() => {
     if (mediaStreamRef.current) {
@@ -1244,7 +1266,8 @@ export default function App() {
           {/* Zone 1: Single-line Brand Title */}
           <a
             href="#vision-stage"
-            className="flex items-center gap-2 sm:gap-2.5 text-sm sm:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0"
+            onClick={handleBrandSecretTap}
+            className="flex items-center gap-2 sm:gap-2.5 text-sm sm:text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0 select-none"
           >
             <img
               src="/assets/aistudio/apple-touch-icon_f4ce301f.png"
@@ -1650,6 +1673,12 @@ export default function App() {
           <span>{t.offlineBanner}</span>
         </div>
       )}
+
+      <DeveloperPortalModal
+        open={showDeveloperPortal}
+        onClose={() => setShowDeveloperPortal(false)}
+        externalServerUrl={externalServerUrl}
+      />
     </div>
   );
 }

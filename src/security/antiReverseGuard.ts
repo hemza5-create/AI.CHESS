@@ -1,4 +1,7 @@
 /**
+ * @author Hemza Harigui
+ * @fingerprint HH-CVSU-2026
+ *
  * Client-Side Obfuscated Verification & Non-Extractable WebCrypto Proof-of-Possession Guard.
  *
  * Security model:
@@ -8,6 +11,37 @@
  * - Generates a hardware/browser-bound non-extractable ECDSA P-256 keypair (`extractable: false`)
  *   so private key material cannot be exported even from DevTools memory inspection.
  */
+
+export const AUTHOR_FINGERPRINT = Object.freeze({
+  developer: 'Hemza Harigui',
+  fingerprintId: 'HH-CVSU-2026',
+  project: 'ChessVision UCI',
+  year: 2026,
+} as const);
+
+export async function getAuthorFingerprintAttestation(): Promise<{
+  developer: string;
+  fingerprintId: string;
+  project: string;
+  year: number;
+  sha256Hex: string;
+}> {
+  const canonical = JSON.stringify(AUTHOR_FINGERPRINT);
+  let sha256Hex = '';
+  if (globalThis.crypto?.subtle) {
+    const digest = await globalThis.crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(canonical)
+    );
+    sha256Hex = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  return {
+    ...AUTHOR_FINGERPRINT,
+    sha256Hex,
+  };
+}
 
 export interface ClientAttestationChallenge {
   nonce: string;

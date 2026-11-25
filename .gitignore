@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+.stockfish-runtime/
+*.pem
+*.key
+*.secret
+*.map

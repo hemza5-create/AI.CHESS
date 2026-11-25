@@ -1,3 +1,7 @@
+/**
+ * @author Hemza Harigui
+ * @fingerprint HH-CVSU-2026
+ */
 import crypto from 'node:crypto';
 
 export type KeyEpochStatus = 'active' | 'grace' | 'retired';
@@ -109,6 +113,23 @@ function computeJwkThumbprint(jwk: { kty: string; crv: string; x: string; y: str
   return crypto.createHash('sha256').update(canonical, 'utf8').digest('base64url');
 }
 
+interface AdminAuthAttemptRecord {
+  failures: number;
+  windowStart: number;
+  lockedUntil: number;
+}
+
+export const SERVER_AUTHOR_FINGERPRINT = Object.freeze({
+  developer: 'Hemza Harigui',
+  fingerprintId: 'HH-CVSU-2026',
+  project: 'ChessVision UCI',
+  year: 2026,
+} as const);
+
+const AUTH_RATE_WINDOW_MS = 5 * 60 * 1000;
+const AUTH_MAX_FAILURES = 8;
+const AUTH_LOCKOUT_MS = 5 * 60 * 1000;
+
 export class CryptoKeyVault {
   // Root secret: derived from process.env or volatile CSPRNG bytes in memory only
   private readonly masterRootSecret: Buffer;
@@ -125,6 +146,7 @@ export class CryptoKeyVault {
   private usedNonces: Map<string, number> = new Map();
   private claimedAdmin: ClaimedAdminCredential | null = null;
   private adminSessions: Map<string, AdminSessionRecord> = new Map();
+  private authAttempts: Map<string, AdminAuthAttemptRecord> = new Map();
 
   constructor() {
     const envMaster = process.env.KEY_VAULT_MASTER_SECRET?.trim();
@@ -675,7 +697,53 @@ export class CryptoKeyVault {
     };
   }
 
-  public claimAdminPasscode(passcode: string): { ok: boolean; error?: string; token?: string } {
+  private checkAuthRateLimit(clientKey: string): { allowed: boolean; retryAfterSec?: number } {
+    const key = clientKey || 'default';
+    const now = Date.now();
+    const record = this.authAttempts.get(key);
+    if (!record) return { allowed: true };
+    if (record.lockedUntil > now) {
+      return {
+        allowed: false,
+        retryAfterSec: Math.max(1, Math.ceil((record.lockedUntil - now) / 1000)),
+      };
+    }
+    if (now - record.windowStart > AUTH_RATE_WINDOW_MS) {
+      this.authAttempts.delete(key);
+    }
+    return { allowed: true };
+  }
+
+  private recordAuthFailure(clientKey: string): void {
+    const key = clientKey || 'default';
+    const now = Date.now();
+    const existing = this.authAttempts.get(key);
+    if (!existing || now - existing.windowStart > AUTH_RATE_WINDOW_MS) {
+      this.authAttempts.set(key, { failures: 1, windowStart: now, lockedUntil: 0 });
+      return;
+    }
+    existing.failures += 1;
+    if (existing.failures >= AUTH_MAX_FAILURES) {
+      existing.lockedUntil = now + AUTH_LOCKOUT_MS;
+    }
+  }
+
+  private clearAuthFailures(clientKey: string): void {
+    this.authAttempts.delete(clientKey || 'default');
+  }
+
+  public claimAdminPasscode(
+    passcode: string,
+    clientKey = 'default'
+  ): { ok: boolean; error?: string; token?: string; rateLimited?: boolean } {
+    const rate = this.checkAuthRateLimit(clientKey);
+    if (!rate.allowed) {
+      return {
+        ok: false,
+        rateLimited: true,
+        error: `Too many authentication attempts. Try again in ${rate.retryAfterSec}s.`,
+      };
+    }
     if (this.getEnvPasscode().length > 0) {
       return {
         ok: false,
@@ -690,6 +758,7 @@ export class CryptoKeyVault {
     }
     const clean = typeof passcode === 'string' ? passcode.trim() : '';
     if (clean.length < 8 || clean.length > 128) {
+      this.recordAuthFailure(clientKey);
       return { ok: false, error: 'Passcode must be between 8 and 128 characters.' };
     }
 
@@ -699,13 +768,26 @@ export class CryptoKeyVault {
       saltHex,
       hashHex: derived.toString('hex'),
     };
+    this.clearAuthFailures(clientKey);
     const token = this.createAdminSession();
     return { ok: true, token };
   }
 
-  public loginWithPasscode(passcode: string): { ok: boolean; error?: string; token?: string } {
+  public loginWithPasscode(
+    passcode: string,
+    clientKey = 'default'
+  ): { ok: boolean; error?: string; token?: string; rateLimited?: boolean } {
+    const rate = this.checkAuthRateLimit(clientKey);
+    if (!rate.allowed) {
+      return {
+        ok: false,
+        rateLimited: true,
+        error: `Too many failed login attempts. Try again in ${rate.retryAfterSec}s.`,
+      };
+    }
     const clean = typeof passcode === 'string' ? passcode.trim() : '';
     if (!clean) {
+      this.recordAuthFailure(clientKey);
       return { ok: false, error: 'Passcode is required.' };
     }
 
@@ -714,8 +796,10 @@ export class CryptoKeyVault {
       const a = crypto.createHash('sha256').update(clean, 'utf8').digest();
       const b = crypto.createHash('sha256').update(envPass, 'utf8').digest();
       if (!crypto.timingSafeEqual(a, b)) {
+        this.recordAuthFailure(clientKey);
         return { ok: false, error: 'Invalid admin passcode.' };
       }
+      this.clearAuthFailures(clientKey);
       return { ok: true, token: this.createAdminSession() };
     }
 
@@ -729,9 +813,41 @@ export class CryptoKeyVault {
     const derived = crypto.scryptSync(clean, this.claimedAdmin.saltHex, 64);
     const stored = Buffer.from(this.claimedAdmin.hashHex, 'hex');
     if (derived.length !== stored.length || !crypto.timingSafeEqual(derived, stored)) {
+      this.recordAuthFailure(clientKey);
       return { ok: false, error: 'Invalid admin passcode.' };
     }
+    this.clearAuthFailures(clientKey);
     return { ok: true, token: this.createAdminSession() };
+  }
+
+  public getSignedOwnershipAttestation(): {
+    fingerprint: typeof SERVER_AUTHOR_FINGERPRINT;
+    digestSha256: string;
+    signatureToken: string;
+    activeKid: string;
+    publicKeySpkiB64: string;
+    epoch: number;
+    serverTime: number;
+  } {
+    if (!this.activeEpoch) {
+      this.rotateKeys('ownership-attestation-init');
+    }
+    const canonical = JSON.stringify(SERVER_AUTHOR_FINGERPRINT);
+    const digestSha256 = sha256Hex(canonical);
+    const signed = this.issueSignedToken({
+      subject: `author:${SERVER_AUTHOR_FINGERPRINT.fingerprintId}`,
+      scope: `ownership:${SERVER_AUTHOR_FINGERPRINT.developer}`,
+      ttlSeconds: 300,
+    });
+    return {
+      fingerprint: SERVER_AUTHOR_FINGERPRINT,
+      digestSha256,
+      signatureToken: signed.token,
+      activeKid: signed.kid,
+      publicKeySpkiB64: this.activeEpoch!.meta.publicKeySpkiB64,
+      epoch: signed.epoch,
+      serverTime: Date.now(),
+    };
   }
 
   private createAdminSession(): string {
