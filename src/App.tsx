@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { Chess } from 'chess.js';
-import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle, ShieldCheck } from 'lucide-react';
+import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle, ShieldCheck, Lock, Unlock } from 'lucide-react';
 import { LiveVisionStage } from './components/LiveVisionStage.tsx';
 import { DigitalBoard } from './components/DigitalBoard.tsx';
 import { CapturePreviewPanel } from './components/CapturePreviewPanel.tsx';
@@ -35,12 +35,16 @@ import {
   type LocalEngineVerificationResult,
 } from './engine/localStockfishEngine.ts';
 import {
+  API_ROUTES,
   buildApiUrl,
   checkRemoteServerHealth,
+  getAuthorizedClientHeaders,
+  getStoredExternalServerId,
   getStoredExternalServerUrl,
   getStoredVisionApiUrl,
   isCapacitorNativeRuntime,
   resolveVisionSnapshotUrl,
+  saveExternalServerId,
   saveExternalServerUrl,
   saveVisionApiUrl,
   useOnlineStatus,
@@ -176,12 +180,15 @@ export default function App() {
   const [externalServerUrl, setExternalServerUrl] = useState<string>(() =>
     getStoredExternalServerUrl()
   );
+  const [externalServerId, setExternalServerId] = useState<string>(() =>
+    getStoredExternalServerId()
+  );
   const [visionApiUrl, setVisionApiUrl] = useState<string>(() =>
     getStoredVisionApiUrl()
   );
   const [remoteServerStatus, setRemoteServerStatus] = useState<RemoteServerStatus>(() => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
-    return buildApiUrl('/api/stockfish/health') ? 'checking' : 'unconfigured';
+    return buildApiUrl(API_ROUTES.engineHealth) ? 'checking' : 'unconfigured';
   });
   const [activeEngineSource, setActiveEngineSource] = useState<ActiveEngineSource>('local-wasm');
   const [localEngineVerify, setLocalEngineVerify] =
@@ -202,9 +209,23 @@ export default function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const autoSpeakPendingRef = useRef<boolean>(false);
 
-  // Hidden developer portal trigger: 5 consecutive clicks within 1.5s on brand logo/title
+  // Hidden AI_CHESS portal & shared in-memory Key Vault admin session
   const [showDeveloperPortal, setShowDeveloperPortal] = useState<boolean>(false);
+  const [vaultAdminToken, setVaultAdminToken] = useState<string>('');
+  const isVaultAdminUnlocked = Boolean(vaultAdminToken);
   const brandTapTimesRef = useRef<number[]>([]);
+
+  const handleLockAndHideVault = useCallback(() => {
+    setVaultAdminToken('');
+    setShowDeveloperPortal(false);
+    setActiveWorkspaceTab((prev) => (prev === 'keyVault' ? 'analyzer' : prev));
+  }, []);
+
+  useEffect(() => {
+    if (!vaultAdminToken && activeWorkspaceTab === 'keyVault') {
+      setActiveWorkspaceTab('analyzer');
+    }
+  }, [vaultAdminToken, activeWorkspaceTab]);
 
   const handleBrandSecretTap = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
     const now = Date.now();
@@ -263,8 +284,8 @@ export default function App() {
       moveCtx: { san: string; uci: string } | null
     ) => {
       setVoiceError(null);
-      const explainUrl = buildApiUrl('/api/gemini/explain', externalServerUrl);
-      const ttsUrl = buildApiUrl('/api/gemini/tts', externalServerUrl);
+      const explainUrl = buildApiUrl(API_ROUTES.explain, externalServerUrl);
+      const ttsUrl = buildApiUrl(API_ROUTES.tts, externalServerUrl);
       if (!isOnline || !explainUrl || !ttsUrl) {
         setVoiceError(t.voiceCloudRequired);
         return;
@@ -272,9 +293,13 @@ export default function App() {
 
       setIsGeneratingExplanation(true);
       try {
+        const authHeaders = await getAuthorizedClientHeaders(externalServerUrl, externalServerId);
         const expRes = await fetch(explainUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders,
+          },
           body: JSON.stringify({
             fen: targetAnalysis.fen,
             lastMoveSan: moveCtx?.san,
@@ -302,7 +327,10 @@ export default function App() {
         setIsSynthesizingAudio(true);
         const ttsRes = await fetch(ttsUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders,
+          },
           body: JSON.stringify({ text, voiceName: selectedVoice, language }),
         });
         const ttsData = await parseJsonResponse<{ audioBase64: string; mimeType?: string }>(
@@ -322,7 +350,7 @@ export default function App() {
         setIsSynthesizingAudio(false);
       }
     },
-    [externalServerUrl, isOnline, language, selectedVoice, playAudioUrl, playerElo, t]
+    [externalServerId, externalServerUrl, isOnline, language, selectedVoice, playAudioUrl, playerElo, t]
   );
 
   // Run Stockfish 19 UCI analysis strictly locally via WebAssembly (or JS fallback)
@@ -404,28 +432,29 @@ export default function App() {
 
   // Probe external server for Vision Snapshot API & AI Voice Coach availability (Stockfish stays local)
   const probeAndAutoConnectServer = useCallback(
-    async (urlOverride?: string) => {
+    async (urlOverride?: string, serverIdOverride?: string) => {
       const targetUrl = urlOverride ?? externalServerUrl;
+      const targetServerId = serverIdOverride ?? externalServerId;
       if (!isOnline) {
         setRemoteServerStatus('offline');
         return;
       }
 
-      if (!buildApiUrl('/api/stockfish/health', targetUrl)) {
+      if (!buildApiUrl(API_ROUTES.engineHealth, targetUrl)) {
         setRemoteServerStatus('unconfigured');
         return;
       }
 
       setRemoteServerStatus('checking');
-      const health = await checkRemoteServerHealth(targetUrl);
+      const health = await checkRemoteServerHealth(targetUrl, 3500, targetServerId);
       setRemoteServerStatus(health.status);
     },
-    [externalServerUrl, isOnline]
+    [externalServerId, externalServerUrl, isOnline]
   );
 
   useEffect(() => {
     void probeAndAutoConnectServer();
-  }, [isOnline, externalServerUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOnline, externalServerUrl, externalServerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Periodic background check for external API server when online
   useEffect(() => {
@@ -440,9 +469,18 @@ export default function App() {
     (nextRawUrl: string) => {
       const saved = saveExternalServerUrl(nextRawUrl);
       setExternalServerUrl(saved);
-      void probeAndAutoConnectServer(saved);
+      void probeAndAutoConnectServer(saved, externalServerId);
     },
-    [probeAndAutoConnectServer]
+    [externalServerId, probeAndAutoConnectServer]
+  );
+
+  const handleSaveExternalServerId = useCallback(
+    (nextRawId: string) => {
+      const saved = saveExternalServerId(nextRawId);
+      setExternalServerId(saved);
+      void probeAndAutoConnectServer(externalServerUrl, saved);
+    },
+    [externalServerUrl, probeAndAutoConnectServer]
   );
 
   const handleSaveVisionApiUrl = useCallback((nextRawUrl: string) => {
@@ -937,9 +975,13 @@ export default function App() {
       isScanningFenRef.current = true;
       setIsScanningFen(true);
       try {
+        const authHeaders = await getAuthorizedClientHeaders(externalServerUrl, externalServerId);
         const res = await fetch(boardFenUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders,
+          },
           body: JSON.stringify({
             imageBase64: dataUrl,
             mimeType: 'image/jpeg',
@@ -1065,6 +1107,7 @@ export default function App() {
     [
       applyCustomFen,
       config.orientation,
+      externalServerId,
       externalServerUrl,
       isOnline,
       meta.locale,
@@ -1185,6 +1228,9 @@ export default function App() {
         if (externalServerUrl) {
           saveExternalServerUrl(externalServerUrl);
         }
+        if (externalServerId) {
+          saveExternalServerId(externalServerId);
+        }
         if (visionApiUrl) {
           saveVisionApiUrl(visionApiUrl);
         }
@@ -1238,6 +1284,7 @@ export default function App() {
       }, 4000);
     }
   }, [
+    externalServerId,
     externalServerUrl,
     handleVerifyLocalEngine,
     language,
@@ -1302,8 +1349,25 @@ export default function App() {
             </a>
           </nav>
 
-          {/* Zone 3: 1 Primary Action */}
-          <div className="shrink-0">
+          {/* Zone 3: AI_CHESS Hidden Portal Button + Primary Action */}
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowDeveloperPortal(true)}
+              aria-label="AI_CHESS"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-mono font-bold rounded-md border transition-colors whitespace-nowrap shrink-0 ${
+                isVaultAdminUnlocked
+                  ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-400/60'
+                  : 'bg-slate-900/75 hover:bg-slate-800 text-slate-200 border-slate-500/50'
+              }`}
+            >
+              {isVaultAdminUnlocked ? (
+                <Unlock className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              ) : (
+                <Lock className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+              )}
+              <span>AI_CHESS</span>
+            </button>
             <button
               type="button"
               onClick={handleToggleStream}
@@ -1425,25 +1489,35 @@ export default function App() {
             <span>{t.tabPuzzles}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveWorkspaceTab('keyVault')}
-            className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
-              activeWorkspaceTab === 'keyVault'
-                ? 'bg-cyan-400 text-slate-950 shadow-sm'
-                : 'text-slate-100 hover:bg-slate-800/80'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-            <span>{t.tabKeyVault}</span>
-          </button>
+          {isVaultAdminUnlocked && (
+            <button
+              type="button"
+              onClick={() => setActiveWorkspaceTab('keyVault')}
+              className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors whitespace-nowrap ${
+                activeWorkspaceTab === 'keyVault'
+                  ? 'bg-cyan-400 text-slate-950 shadow-sm'
+                  : 'text-slate-100 hover:bg-slate-800/80'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>{t.tabKeyVault}</span>
+            </button>
+          )}
         </nav>
 
         {activeWorkspaceTab === 'coach' && <InteractiveCoachTab />}
 
         {activeWorkspaceTab === 'puzzles' && <PuzzlesTab />}
 
-        {activeWorkspaceTab === 'keyVault' && <SecurityKeyVaultTab />}
+        {activeWorkspaceTab === 'keyVault' && isVaultAdminUnlocked && (
+          <SecurityKeyVaultTab
+            externalServerUrl={externalServerUrl}
+            externalServerId={externalServerId}
+            adminToken={vaultAdminToken}
+            onAdminTokenChange={setVaultAdminToken}
+            onLockAndHide={handleLockAndHideVault}
+          />
+        )}
 
         {activeWorkspaceTab === 'analyzer' && (
           <>
@@ -1578,18 +1652,6 @@ export default function App() {
               analysis={analysis}
               isAnalyzing={isAnalyzing}
               analysisError={analysisError}
-              isOnline={isOnline}
-              activeEngineSource={activeEngineSource}
-              localEngineVerify={localEngineVerify}
-              isVerifyingEngine={isVerifyingEngine}
-              onVerifyLocalEngine={() => void handleVerifyLocalEngine()}
-              onEngineAutoUpdated={() => {
-                void runStockfishAnalysis(chessRef.current.fen(), searchDepth, null);
-              }}
-              remoteServerStatus={remoteServerStatus}
-              externalServerUrl={externalServerUrl}
-              onSaveExternalServerUrl={handleSaveExternalServerUrl}
-              onReconnectServer={() => void probeAndAutoConnectServer()}
               searchDepth={searchDepth}
               playerElo={playerElo}
               autoDepthByElo={autoDepthByElo}
@@ -1678,6 +1740,26 @@ export default function App() {
         open={showDeveloperPortal}
         onClose={() => setShowDeveloperPortal(false)}
         externalServerUrl={externalServerUrl}
+        externalServerId={externalServerId}
+        adminToken={vaultAdminToken}
+        onAdminTokenChange={setVaultAdminToken}
+        onOpenKeyVault={() => {
+          setShowDeveloperPortal(false);
+          setActiveWorkspaceTab('keyVault');
+        }}
+        onLockAndHide={handleLockAndHideVault}
+        isOnline={isOnline}
+        activeEngineSource={activeEngineSource}
+        localEngineVerify={localEngineVerify}
+        isVerifyingEngine={isVerifyingEngine}
+        onVerifyLocalEngine={() => void handleVerifyLocalEngine()}
+        onEngineAutoUpdated={() => {
+          void runStockfishAnalysis(chessRef.current.fen(), searchDepth, null);
+        }}
+        remoteServerStatus={remoteServerStatus}
+        onSaveExternalServerUrl={handleSaveExternalServerUrl}
+        onSaveExternalServerId={handleSaveExternalServerId}
+        onReconnectServer={() => void probeAndAutoConnectServer()}
       />
     </div>
   );

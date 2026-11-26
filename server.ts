@@ -10,6 +10,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { Chess } from 'chess.js';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { cryptoKeyVault } from './server/cryptoKeyVault.ts';
@@ -21,6 +22,71 @@ import {
 } from './server/stockfishUpdater.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
+const DEFAULT_EXTERNAL_SERVER_ID = 'cvsu-uci-core-v2';
+const SERVER_APP_VERSION = (() => {
+  try {
+    const pkgRaw = fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8');
+    const pkg = JSON.parse(pkgRaw) as { version?: unknown };
+    return typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : '1.1.0';
+  } catch {
+    return '1.1.0';
+  }
+})();
+
+function getExpectedServerId(): string {
+  const raw = (process.env.EXTERNAL_SERVER_ID ?? '').trim();
+  return raw || DEFAULT_EXTERNAL_SERVER_ID;
+}
+
+function resolveEnvRoute(envKey: string, fallback: string): string {
+  const raw = (process.env[envKey] ?? '').trim();
+  if (!raw || !raw.startsWith('/')) return fallback;
+  if (/\/gemini\//i.test(raw) || /^\/api\/v2\/tt$/i.test(raw)) {
+    return fallback;
+  }
+  return raw;
+}
+
+const usedServerRoutes = new Set<string>();
+function resolveUniqueEnvRoute(envKey: string, fallback: string): string {
+  const candidate = resolveEnvRoute(envKey, fallback);
+  if (usedServerRoutes.has(candidate)) {
+    console.warn(
+      `[RouteConfig] Duplicate path "${candidate}" for ${envKey}; falling back to "${fallback}".`
+    );
+    usedServerRoutes.add(fallback);
+    return fallback;
+  }
+  usedServerRoutes.add(candidate);
+  return candidate;
+}
+
+const SERVER_ROUTES = {
+  boardScan: resolveUniqueEnvRoute('API_ROUTE_BOARD_SCAN', '/api/v2/vision/scan-board'),
+  explain: resolveUniqueEnvRoute('API_ROUTE_EXPLAIN', '/api/v2/coach/explain'),
+  ownership: resolveUniqueEnvRoute('API_ROUTE_OWNERSHIP', '/api/v2/vault/ownership'),
+  tts: resolveUniqueEnvRoute('API_ROUTE_TTS', '/api/v2/coach/synthesize'),
+  engineHealth: resolveUniqueEnvRoute('API_ROUTE_ENGINE_HEALTH', '/api/v2/engine/health'),
+  engineVersion: resolveUniqueEnvRoute('API_ROUTE_ENGINE_VERSION', '/api/v2/engine/version'),
+  engineAutoUpdate: resolveUniqueEnvRoute('API_ROUTE_ENGINE_AUTO_UPDATE', '/api/v2/engine/auto-update'),
+  engineAnalyze: '/api/v2/engine/analyze',
+  downloadZip: '/api/v2/download/app.zip',
+  vaultPublicKeys: '/api/v2/vault/public-keys',
+  vaultAuthStatus: '/api/v2/vault/auth-status',
+  vaultAdminClaim: '/api/v2/vault/admin/claim',
+  vaultAdminLogin: '/api/v2/vault/admin/login',
+  vaultAdminLogout: '/api/v2/vault/admin/logout',
+  vaultIssueToken: '/api/v2/vault/issue-token',
+  vaultVerify: '/api/v2/vault/verify',
+  vaultRotate: '/api/v2/vault/rotate',
+  vaultPolicy: '/api/v2/vault/policy',
+} as const;
+
+function timingSafeEqualString(a: string, b: string): boolean {
+  const hashA = crypto.createHash('sha256').update(a, 'utf8').digest();
+  const hashB = crypto.createHash('sha256').update(b, 'utf8').digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
 
 interface UciLineInfo {
   multipv: number;
@@ -569,9 +635,13 @@ async function startServer() {
       // Non-browser / same-origin calls without Origin header still must pass Bearer verification
       return true;
     }
+    if (origin === 'https://localhost' || origin === 'capacitor://localhost') {
+      return true;
+    }
     const appUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
     const rawHost = req.headers['x-forwarded-host'] || req.headers.host;
-    const host = Array.isArray(rawHost) ? rawHost[0] : rawHost;
+    const rawHostStr = Array.isArray(rawHost) ? rawHost[0] : rawHost;
+    const host = typeof rawHostStr === 'string' ? rawHostStr.split(',')[0].trim() : '';
     return Boolean(
       (appUrl && origin === appUrl) || (host && origin.endsWith(`://${host}`))
     );
@@ -582,22 +652,21 @@ async function startServer() {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-    if (req.path.startsWith('/api/security') || req.path === '/api/stockfish/auto-update') {
+    if (req.path.startsWith('/api')) {
       const origin = req.headers.origin;
+      if (origin && !isTrustedRequestOrigin(req)) {
+        res.status(403).json({ error: 'مصدر الطلب غير موثوق (Untrusted origin rejected).' });
+        return;
+      }
       if (origin && isTrustedRequestOrigin(req)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
       }
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-      if (req.method === 'OPTIONS') {
-        res.status(204).end();
-        return;
-      }
-    } else if (req.path.startsWith('/api')) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, X-ChessVision-Server-Id, X-API-Key'
+      );
       if (req.method === 'OPTIONS') {
         res.status(204).end();
         return;
@@ -614,13 +683,129 @@ async function startServer() {
     return match ? match[1].trim() : '';
   };
 
+  const extractHeaderValue = (req: Request, name: string): string => {
+    const raw = req.headers[name.toLowerCase()];
+    if (Array.isArray(raw)) return (raw[0] ?? '').trim();
+    return typeof raw === 'string' ? raw.trim() : '';
+  };
+
+  const hasMatchingServerId = (req: Request): boolean => {
+    const incomingId = extractHeaderValue(req, 'x-chessvision-server-id');
+    if (!incomingId) return false;
+    return timingSafeEqualString(incomingId, getExpectedServerId());
+  };
+
+  const hasValidServerApiKey = (req: Request): boolean => {
+    const configuredKey = (process.env.SERVER_API_KEY ?? '').trim();
+    if (!configuredKey) return false;
+    const headerKey = extractHeaderValue(req, 'x-api-key');
+    if (headerKey && timingSafeEqualString(headerKey, configuredKey)) {
+      return true;
+    }
+    const bearer = extractBearerToken(req);
+    if (bearer && timingSafeEqualString(bearer, configuredKey)) {
+      return true;
+    }
+    return false;
+  };
+
   const getClientRateKey = (req: Request): string => {
     const forwarded = req.headers['x-forwarded-for'];
     const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
     return (typeof raw === 'string' && raw.split(',')[0].trim()) || req.ip || 'local';
   };
 
-  // Serve updated or bundled Stockfish WASM/JS worker files dynamically
+  const requireTrustedServerChannel = (
+    req: Request,
+    res: Response,
+    next: express.NextFunction
+  ): void => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'مصدر الطلب غير موثوق (Origin rejected).' });
+      return;
+    }
+    if (!hasMatchingServerId(req)) {
+      res.status(403).json({
+        error: 'معرّف الخادم (X-ChessVision-Server-Id) مفقود أو غير مطابق.',
+      });
+      return;
+    }
+    next();
+  };
+
+  const requireVerifiedCaller = (
+    req: Request,
+    res: Response,
+    next: express.NextFunction
+  ): void => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'مصدر الطلب غير موثوق (Origin rejected).' });
+      return;
+    }
+    if (!hasMatchingServerId(req)) {
+      res.status(403).json({
+        error: 'معرّف الخادم (X-ChessVision-Server-Id) مفقود أو غير مطابق.',
+      });
+      return;
+    }
+    if (hasValidServerApiKey(req)) {
+      next();
+      return;
+    }
+    const bearer = extractBearerToken(req);
+    if (!bearer) {
+      res.status(401).json({
+        error: 'غير مصرّح: يلزم رمز تحقق Ed25519 صالح (Bearer) أو مفتاح API.',
+      });
+      return;
+    }
+    const verified = cryptoKeyVault.verifySignedToken(bearer);
+    if (!verified.valid || !verified.payload) {
+      res.status(401).json({
+        error: verified.reason || 'رمز التفويض غير صالح أو منتهي الصلاحية.',
+      });
+      return;
+    }
+    const scope = verified.payload.scope;
+    const isAllowedScope =
+      scope === 'engine:verified' ||
+      scope === 'vision:client' ||
+      cryptoKeyVault.verifyAdminSession(bearer);
+    if (!isAllowedScope) {
+      res.status(403).json({ error: 'صلاحيات الرمز غير كافية للوصول إلى هذا المسار.' });
+      return;
+    }
+    next();
+  };
+
+  const requireAdminAuthorization = (
+    req: Request,
+    res: Response,
+    next: express.NextFunction
+  ): void => {
+    if (!isTrustedRequestOrigin(req)) {
+      res.status(403).json({ error: 'Untrusted origin rejected.' });
+      return;
+    }
+    if (!hasMatchingServerId(req)) {
+      res.status(403).json({
+        error: 'Invalid or missing X-ChessVision-Server-Id.',
+      });
+      return;
+    }
+    const bearer = extractBearerToken(req);
+    if (!cryptoKeyVault.verifyAdminSession(bearer)) {
+      res.status(401).json({
+        error: 'Admin authorization required.',
+        requiresAdminAuth: true,
+        authStatus: cryptoKeyVault.getAuthStatus(''),
+      });
+      return;
+    }
+    next();
+  };
+
+  // Serve updated or bundled Stockfish WASM/JS worker files dynamically (kept accessible for local offline WASM/PWA worker)
   app.get('/stockfish/:filename', (req: Request, res: Response, next: express.NextFunction) => {
     const requested = typeof req.params.filename === 'string' ? req.params.filename : '';
     const resolved = resolveStockfishAssetPath(requested);
@@ -638,11 +823,13 @@ async function startServer() {
     res.sendFile(resolved.filePath);
   });
 
-  // Engine Health Check Endpoint
-  app.get('/api/stockfish/health', (_req: Request, res: Response) => {
+  // Engine Health Check Endpoint (verifies matching Server ID)
+  app.get(SERVER_ROUTES.engineHealth, requireTrustedServerChannel, (_req: Request, res: Response) => {
     const active = getActiveEngineDescriptors();
     res.json({
       ok: fs.existsSync(active.nodeEnginePath),
+      appVersion: SERVER_APP_VERSION,
+      serverId: getExpectedServerId(),
       engine: active.wasmScript.replace(/\.js$/i, ''),
       installedVersion: active.installedVersion,
       installedSource: active.installedSource,
@@ -652,8 +839,8 @@ async function startServer() {
     });
   });
 
-  // Check Official Stockfish Release & Installed Version
-  app.get('/api/stockfish/version', async (_req: Request, res: Response) => {
+  // Check Official Stockfish Release & Installed Version (Protected)
+  app.get(SERVER_ROUTES.engineVersion, requireVerifiedCaller, async (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     try {
       const status = await checkStockfishOfficialVersion();
@@ -666,35 +853,25 @@ async function startServer() {
   });
 
   // Authenticated Official Stockfish Auto-Update Endpoint
-  app.post('/api/stockfish/auto-update', async (req: Request, res: Response) => {
-    if (!isTrustedRequestOrigin(req)) {
-      res.status(403).json({ error: 'Untrusted origin rejected.' });
-      return;
+  app.post(
+    SERVER_ROUTES.engineAutoUpdate,
+    requireAdminAuthorization,
+    async (_req: Request, res: Response) => {
+      try {
+        const result = await performStockfishAutoUpdate();
+        stockfishEngine.reloadEngine();
+        res.json(result);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'فشل التحديث التلقائي لمحرك Stockfish.';
+        console.error(`[${SERVER_ROUTES.engineAutoUpdate}]`, message);
+        res.status(502).json({ error: message });
+      }
     }
-    const bearer = extractBearerToken(req);
-    if (!cryptoKeyVault.verifyAdminSession(bearer)) {
-      res.status(401).json({
-        error: 'Admin authorization required to auto-update Stockfish engine files.',
-        requiresAdminAuth: true,
-        authStatus: cryptoKeyVault.getAuthStatus(''),
-      });
-      return;
-    }
+  );
 
-    try {
-      const result = await performStockfishAutoUpdate();
-      stockfishEngine.reloadEngine();
-      res.json(result);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'فشل التحديث التلقائي لمحرك Stockfish.';
-      console.error('[/api/stockfish/auto-update]', message);
-      res.status(502).json({ error: message });
-    }
-  });
-
-  // Stockfish UCI Analysis Endpoint
-  app.post('/api/stockfish/analyze', async (req: Request, res: Response) => {
+  // Stockfish UCI Analysis Endpoint (Protected)
+  app.post(SERVER_ROUTES.engineAnalyze, requireVerifiedCaller, async (req: Request, res: Response) => {
     try {
       const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
         fen?: unknown;
@@ -736,13 +913,13 @@ async function startServer() {
       res.json(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'فشل تحليل Stockfish';
-      console.error('[/api/stockfish/analyze]', message);
+      console.error(`[${SERVER_ROUTES.engineAnalyze}]`, message);
       res.status(500).json({ error: message });
     }
   });
 
-  // Gemini Grandmaster Multilingual Commentary Endpoint
-  app.post('/api/gemini/explain', async (req: Request, res: Response) => {
+  // Gemini Grandmaster Multilingual Commentary Endpoint (Protected)
+  app.post(SERVER_ROUTES.explain, requireVerifiedCaller, async (req: Request, res: Response) => {
     try {
       const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
         fen?: string;
@@ -825,13 +1002,13 @@ async function startServer() {
       res.json({ explanation });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'فشل توليد الشرح التحليلي';
-      console.error('[/api/gemini/explain]', message);
+      console.error(`[${SERVER_ROUTES.explain}]`, message);
       res.status(500).json({ error: message });
     }
   });
 
-  // Gemini TTS Multilingual Voice Synthesis Endpoint
-  app.post('/api/gemini/tts', async (req: Request, res: Response) => {
+  // Gemini TTS Multilingual Voice Synthesis Endpoint (Protected)
+  app.post(SERVER_ROUTES.tts, requireVerifiedCaller, async (req: Request, res: Response) => {
     try {
       const { text, voiceName = 'Kore', language = 'ar' } = req.body as {
         text?: string;
@@ -895,13 +1072,13 @@ async function startServer() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'فشل توليد الصوت';
-      console.error('[/api/gemini/tts]', message);
+      console.error(`[${SERVER_ROUTES.tts}]`, message);
       res.status(500).json({ error: message });
     }
   });
 
-  // Gemini Vision Board-to-FEN Position Scanner Endpoint
-  app.post('/api/gemini/board-fen', async (req: Request, res: Response) => {
+  // Gemini Vision Board-to-FEN Position Scanner Endpoint (Protected)
+  app.post(SERVER_ROUTES.boardScan, requireVerifiedCaller, async (req: Request, res: Response) => {
     try {
       const {
         imageBase64,
@@ -1130,13 +1307,13 @@ async function startServer() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'فشلت قراءة الرقعة بالذكاء الاصطناعي.';
-      console.error('[/api/gemini/board-fen]', message);
+      console.error(`[${SERVER_ROUTES.boardScan}]`, message);
       res.status(500).json({ error: message });
     }
   });
 
-  // Direct Project Source ZIP Download Endpoint
-  app.get('/api/download/app.zip', (_req: Request, res: Response) => {
+  // Direct Project Source ZIP Download Endpoint (Admin Authenticated Only)
+  app.get(SERVER_ROUTES.downloadZip, requireAdminAuthorization, (_req: Request, res: Response) => {
     try {
       const rootDir = path.resolve(process.cwd());
       const excludedNames = new Set([
@@ -1248,60 +1425,62 @@ async function startServer() {
       res.send(zipBuffer);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'فشل تجهيز ملف التنزيل';
-      console.error('[/api/download/app.zip]', message);
+      console.error(`[${SERVER_ROUTES.downloadZip}]`, message);
       res.status(500).json({ error: message });
     }
   });
 
   // ==================== Cryptographic Key Vault & Rotation API ====================
 
-  app.get('/api/security/public-keys', (_req: Request, res: Response) => {
+  app.get(SERVER_ROUTES.vaultPublicKeys, requireTrustedServerChannel, (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(cryptoKeyVault.getPublicKeyBundle());
   });
 
-  app.get('/api/security/auth-status', (req: Request, res: Response) => {
+  app.get(SERVER_ROUTES.vaultAuthStatus, requireTrustedServerChannel, (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(cryptoKeyVault.getAuthStatus(extractBearerToken(req)));
   });
 
-  app.get('/api/security/ownership', (_req: Request, res: Response) => {
+  app.get(SERVER_ROUTES.ownership, requireVerifiedCaller, (_req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(cryptoKeyVault.getSignedOwnershipAttestation());
   });
 
-  app.post('/api/security/admin/claim', (req: Request, res: Response) => {
-    if (!isTrustedRequestOrigin(req)) {
-      res.status(403).json({ error: 'Untrusted origin rejected.' });
-      return;
+  app.post(SERVER_ROUTES.vaultAdminClaim, requireTrustedServerChannel, (req: Request, res: Response) => {
+    try {
+      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
+      const passcode = typeof body.passcode === 'string' ? body.passcode : '';
+      const result = cryptoKeyVault.claimAdminPasscode(passcode, getClientRateKey(req));
+      if (!result.ok) {
+        const status = result.rateLimited ? 429 : result.error?.includes('already') ? 409 : 400;
+        res.status(status).json({ error: result.error });
+        return;
+      }
+      res.json({ ok: true, token: result.token });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Admin claim error.';
+      res.status(500).json({ error: message });
     }
-    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
-    const passcode = typeof body.passcode === 'string' ? body.passcode : '';
-    const result = cryptoKeyVault.claimAdminPasscode(passcode, getClientRateKey(req));
-    if (!result.ok) {
-      const status = result.rateLimited ? 429 : result.error?.includes('already') ? 409 : 400;
-      res.status(status).json({ error: result.error });
-      return;
-    }
-    res.json({ ok: true, token: result.token });
   });
 
-  app.post('/api/security/admin/login', (req: Request, res: Response) => {
-    if (!isTrustedRequestOrigin(req)) {
-      res.status(403).json({ error: 'Untrusted origin rejected.' });
-      return;
+  app.post(SERVER_ROUTES.vaultAdminLogin, requireTrustedServerChannel, (req: Request, res: Response) => {
+    try {
+      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
+      const passcode = typeof body.passcode === 'string' ? body.passcode : '';
+      const result = cryptoKeyVault.loginWithPasscode(passcode, getClientRateKey(req));
+      if (!result.ok) {
+        res.status(result.rateLimited ? 429 : 401).json({ error: result.error });
+        return;
+      }
+      res.json({ ok: true, token: result.token });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Admin login error.';
+      res.status(500).json({ error: message });
     }
-    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { passcode?: unknown };
-    const passcode = typeof body.passcode === 'string' ? body.passcode : '';
-    const result = cryptoKeyVault.loginWithPasscode(passcode, getClientRateKey(req));
-    if (!result.ok) {
-      res.status(result.rateLimited ? 429 : 401).json({ error: result.error });
-      return;
-    }
-    res.json({ ok: true, token: result.token });
   });
 
-  app.post('/api/security/admin/logout', (req: Request, res: Response) => {
+  app.post(SERVER_ROUTES.vaultAdminLogout, requireTrustedServerChannel, (req: Request, res: Response) => {
     const token = extractBearerToken(req);
     if (token) {
       cryptoKeyVault.revokeAdminSession(token);
@@ -1309,7 +1488,7 @@ async function startServer() {
     res.json({ ok: true });
   });
 
-  app.post('/api/security/issue-token', (req: Request, res: Response) => {
+  app.post(SERVER_ROUTES.vaultIssueToken, requireTrustedServerChannel, (req: Request, res: Response) => {
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
       subject?: unknown;
       scope?: unknown;
@@ -1319,6 +1498,15 @@ async function startServer() {
       clientPublicJwk?: unknown;
       clientProofB64Url?: unknown;
     };
+
+    const rawScope =
+      typeof body.scope === 'string' && body.scope.trim() ? body.scope.trim() : 'engine:verified';
+    if (rawScope !== 'engine:verified' && rawScope !== 'vision:client') {
+      res.status(403).json({
+        error: 'غير مصرّح بإصدار هذا النطاق من الصلاحيات عبر رمز العميل.',
+      });
+      return;
+    }
 
     const nonce = typeof body.nonce === 'string' ? body.nonce.trim() : '';
     const timestamp = Number(body.timestamp);
@@ -1349,16 +1537,14 @@ async function startServer() {
       typeof body.subject === 'string' && body.subject.trim()
         ? body.subject.trim()
         : 'chessvision-client';
-    const scope =
-      typeof body.scope === 'string' && body.scope.trim() ? body.scope.trim() : 'engine:verified';
     const ttlSeconds =
       typeof body.ttlSeconds === 'number' && Number.isFinite(body.ttlSeconds)
-        ? body.ttlSeconds
+        ? Math.min(300, Math.max(30, body.ttlSeconds))
         : 300;
 
     const issued = cryptoKeyVault.issueSignedToken({
       subject,
-      scope,
+      scope: rawScope,
       ttlSeconds,
       clientThumbprint: popCheck.thumbprint,
     });
@@ -1368,22 +1554,13 @@ async function startServer() {
     });
   });
 
-  app.post('/api/security/verify', (req: Request, res: Response) => {
+  app.post(SERVER_ROUTES.vaultVerify, requireTrustedServerChannel, (req: Request, res: Response) => {
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { token?: unknown };
     const token = typeof body.token === 'string' ? body.token : '';
     res.json(cryptoKeyVault.verifySignedToken(token));
   });
 
-  app.post('/api/security/rotate', (req: Request, res: Response) => {
-    if (!isTrustedRequestOrigin(req)) {
-      res.status(403).json({ error: 'Untrusted origin rejected.' });
-      return;
-    }
-    const bearer = extractBearerToken(req);
-    if (!cryptoKeyVault.verifyAdminSession(bearer)) {
-      res.status(401).json({ error: 'Admin authorization required to rotate cryptographic keys.' });
-      return;
-    }
+  app.post(SERVER_ROUTES.vaultRotate, requireAdminAuthorization, (req: Request, res: Response) => {
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { reason?: unknown };
     const reason =
       typeof body.reason === 'string' && body.reason.trim()
@@ -1397,16 +1574,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/security/policy', (req: Request, res: Response) => {
-    if (!isTrustedRequestOrigin(req)) {
-      res.status(403).json({ error: 'Untrusted origin rejected.' });
-      return;
-    }
-    const bearer = extractBearerToken(req);
-    if (!cryptoKeyVault.verifyAdminSession(bearer)) {
-      res.status(401).json({ error: 'Admin authorization required to update rotation policy.' });
-      return;
-    }
+  app.post(SERVER_ROUTES.vaultPolicy, requireAdminAuthorization, (req: Request, res: Response) => {
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
       autoRotateEnabled?: unknown;
       rotationIntervalSeconds?: unknown;

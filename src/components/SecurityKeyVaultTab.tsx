@@ -15,7 +15,12 @@ import {
   Unlock,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
-import { buildApiUrl } from '../utils/networkAndServer.ts';
+import {
+  API_ROUTES,
+  buildApiUrl,
+  getServerIdHeaders,
+  safeParseJsonBody,
+} from '../utils/networkAndServer.ts';
 import {
   createAttestedChallenge,
   runAntiReverseDiagnostics,
@@ -88,11 +93,37 @@ function formatCountdown(ms: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
-export const SecurityKeyVaultTab: React.FC = () => {
+interface SecurityKeyVaultTabProps {
+  externalServerUrl?: string;
+  externalServerId?: string;
+  adminToken?: string;
+  onAdminTokenChange?: (nextToken: string) => void;
+  onLockAndHide?: () => void;
+}
+
+export const SecurityKeyVaultTab: React.FC<SecurityKeyVaultTabProps> = ({
+  externalServerUrl,
+  externalServerId,
+  adminToken: controlledAdminToken,
+  onAdminTokenChange,
+  onLockAndHide,
+}) => {
   const { t, meta } = useLanguage();
 
   // Bearer token held strictly in React state memory (never stored in localStorage/sessionStorage)
-  const [adminBearerToken, setAdminBearerToken] = useState<string>('');
+  const [localAdminToken, setLocalAdminToken] = useState<string>('');
+  const adminBearerToken = controlledAdminToken ?? localAdminToken;
+  const updateAdminToken = useCallback(
+    (nextToken: string) => {
+      if (onAdminTokenChange) {
+        onAdminTokenChange(nextToken);
+      } else {
+        setLocalAdminToken(nextToken);
+      }
+    },
+    [onAdminTokenChange]
+  );
+
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse>({
     configuredViaEnv: false,
     claimed: false,
@@ -121,36 +152,42 @@ export const SecurityKeyVaultTab: React.FC = () => {
 
   const loadVaultState = useCallback(async (tokenOverride?: string) => {
     const activeBearer = tokenOverride ?? adminBearerToken;
-    const keysUrl = buildApiUrl('/api/security/public-keys');
-    const authUrl = buildApiUrl('/api/security/auth-status');
+    const keysUrl = buildApiUrl(API_ROUTES.vaultPublicKeys, externalServerUrl);
+    const authUrl = buildApiUrl(API_ROUTES.vaultAuthStatus, externalServerUrl);
     if (!keysUrl || !authUrl) return;
+    const serverHeaders = getServerIdHeaders(externalServerId);
 
     try {
       const [keysRes, authRes] = await Promise.all([
-        fetch(keysUrl, { cache: 'no-store' }),
+        fetch(keysUrl, { cache: 'no-store', headers: serverHeaders }),
         fetch(authUrl, {
           cache: 'no-store',
-          headers: activeBearer ? { Authorization: `Bearer ${activeBearer}` } : {},
+          headers: activeBearer
+            ? { ...serverHeaders, Authorization: `Bearer ${activeBearer}` }
+            : serverHeaders,
         }),
       ]);
-      if (keysRes.ok) {
-        const keysData = (await keysRes.json()) as KeyBundleResponse;
-        setBundle(keysData);
-        setPolicyAutoRotate(keysData.policy.autoRotateEnabled);
-        setPolicyIntervalSec(Math.round(keysData.policy.rotationIntervalMs / 1000));
-        setPolicyGraceSec(Math.round(keysData.policy.graceWindowMs / 1000));
+      const keysParsed = await safeParseJsonBody<KeyBundleResponse>(keysRes, 'Failed to load public keys');
+      if (keysParsed.ok && keysParsed.data) {
+        setBundle(keysParsed.data);
+        setPolicyAutoRotate(keysParsed.data.policy.autoRotateEnabled);
+        setPolicyIntervalSec(Math.round(keysParsed.data.policy.rotationIntervalMs / 1000));
+        setPolicyGraceSec(Math.round(keysParsed.data.policy.graceWindowMs / 1000));
+        setVaultError(null);
+      } else if (keysParsed.error) {
+        setVaultError(keysParsed.error);
       }
-      if (authRes.ok) {
-        const authData = (await authRes.json()) as AuthStatusResponse;
-        setAuthStatus(authData);
-        if (!authData.authenticated && activeBearer) {
-          setAdminBearerToken('');
+      const authParsed = await safeParseJsonBody<AuthStatusResponse>(authRes, 'Failed to load auth status');
+      if (authParsed.ok && authParsed.data) {
+        setAuthStatus(authParsed.data);
+        if (!authParsed.data.authenticated && activeBearer) {
+          updateAdminToken('');
         }
       }
     } catch {
       // Ignore transient network failures
     }
-  }, [adminBearerToken]);
+  }, [adminBearerToken, externalServerId, externalServerUrl, updateAdminToken]);
 
   useEffect(() => {
     void loadVaultState();
@@ -173,7 +210,8 @@ export const SecurityKeyVaultTab: React.FC = () => {
     setAuthError(null);
     const isClaimMode = !authStatus.configuredViaEnv && !authStatus.claimed;
     const endpoint = buildApiUrl(
-      isClaimMode ? '/api/security/admin/claim' : '/api/security/admin/login'
+      isClaimMode ? API_ROUTES.vaultAdminClaim : API_ROUTES.vaultAdminLogin,
+      externalServerUrl
     );
     if (!endpoint) return;
 
@@ -181,17 +219,23 @@ export const SecurityKeyVaultTab: React.FC = () => {
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getServerIdHeaders(externalServerId),
+        },
         body: JSON.stringify({ passcode: passcodeInput }),
       });
-      const data = (await res.json()) as { ok?: boolean; token?: string; error?: string };
-      if (!res.ok || !data.token) {
-        setAuthError(data.error ?? 'Authentication failed.');
+      const parsed = await safeParseJsonBody<{ ok?: boolean; token?: string; error?: string }>(
+        res,
+        'Authentication failed.'
+      );
+      if (!parsed.ok || !parsed.data?.token) {
+        setAuthError(parsed.error ?? 'Authentication failed.');
         return;
       }
-      setAdminBearerToken(data.token);
+      updateAdminToken(parsed.data.token);
       setPasscodeInput('');
-      await loadVaultState(data.token);
+      await loadVaultState(parsed.data.token);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Network error');
     } finally {
@@ -200,25 +244,29 @@ export const SecurityKeyVaultTab: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    const endpoint = buildApiUrl('/api/security/admin/logout');
+    const endpoint = buildApiUrl(API_ROUTES.vaultAdminLogout, externalServerUrl);
     if (endpoint && adminBearerToken) {
       try {
         await fetch(endpoint, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${adminBearerToken}` },
+          headers: {
+            ...getServerIdHeaders(externalServerId),
+            Authorization: `Bearer ${adminBearerToken}`,
+          },
         });
       } catch {
         // Ignore network errors on logout
       }
     }
-    setAdminBearerToken('');
+    updateAdminToken('');
     await loadVaultState('');
+    onLockAndHide?.();
   };
 
   const handleRotateNow = async () => {
     setVaultError(null);
     setPolicyNotice(null);
-    const endpoint = buildApiUrl('/api/security/rotate');
+    const endpoint = buildApiUrl(API_ROUTES.vaultRotate, externalServerUrl);
     if (!endpoint || !adminBearerToken) return;
 
     setIsRotating(true);
@@ -227,21 +275,26 @@ export const SecurityKeyVaultTab: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getServerIdHeaders(externalServerId),
           Authorization: `Bearer ${adminBearerToken}`,
         },
         body: JSON.stringify({ reason: 'manual-admin-rotation' }),
       });
-      const data = (await res.json()) as {
+      const parsed = await safeParseJsonBody<{
         ok?: boolean;
         bundle?: KeyBundleResponse;
         error?: string;
-      };
-      if (!res.ok) {
-        setVaultError(data.error ?? 'Failed to rotate keys.');
+      }>(res, 'Failed to rotate keys.');
+      if (!parsed.ok || !parsed.data) {
+        if (res.status === 401) {
+          updateAdminToken('');
+          setAuthStatus((prev) => ({ ...prev, authenticated: false }));
+        }
+        setVaultError(parsed.error ?? 'Failed to rotate keys.');
         return;
       }
-      if (data.bundle) {
-        setBundle(data.bundle);
+      if (parsed.data.bundle) {
+        setBundle(parsed.data.bundle);
       } else {
         await loadVaultState();
       }
@@ -255,7 +308,7 @@ export const SecurityKeyVaultTab: React.FC = () => {
   const handleSavePolicy = async () => {
     setVaultError(null);
     setPolicyNotice(null);
-    const endpoint = buildApiUrl('/api/security/policy');
+    const endpoint = buildApiUrl(API_ROUTES.vaultPolicy, externalServerUrl);
     if (!endpoint || !adminBearerToken) return;
 
     try {
@@ -263,6 +316,7 @@ export const SecurityKeyVaultTab: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getServerIdHeaders(externalServerId),
           Authorization: `Bearer ${adminBearerToken}`,
         },
         body: JSON.stringify({
@@ -271,17 +325,21 @@ export const SecurityKeyVaultTab: React.FC = () => {
           graceWindowSeconds: policyGraceSec,
         }),
       });
-      const data = (await res.json()) as {
+      const parsed = await safeParseJsonBody<{
         ok?: boolean;
         bundle?: KeyBundleResponse;
         error?: string;
-      };
-      if (!res.ok) {
-        setVaultError(data.error ?? 'Failed to update rotation policy.');
+      }>(res, 'Failed to update rotation policy.');
+      if (!parsed.ok || !parsed.data) {
+        if (res.status === 401) {
+          updateAdminToken('');
+          setAuthStatus((prev) => ({ ...prev, authenticated: false }));
+        }
+        setVaultError(parsed.error ?? 'Failed to update rotation policy.');
         return;
       }
-      if (data.bundle) {
-        setBundle(data.bundle);
+      if (parsed.data.bundle) {
+        setBundle(parsed.data.bundle);
       }
       setPolicyNotice(t.keyVaultPolicySaved);
       globalThis.setTimeout(() => setPolicyNotice(null), 4000);
@@ -294,7 +352,7 @@ export const SecurityKeyVaultTab: React.FC = () => {
     setVaultError(null);
     setVerifyResult(null);
     setClientVerifyNote(null);
-    const endpoint = buildApiUrl('/api/security/issue-token');
+    const endpoint = buildApiUrl(API_ROUTES.vaultIssueToken, externalServerUrl);
     if (!endpoint) return;
 
     setIsTestingToken(true);
@@ -302,7 +360,10 @@ export const SecurityKeyVaultTab: React.FC = () => {
       const challenge = await createAttestedChallenge();
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getServerIdHeaders(externalServerId),
+        },
         body: JSON.stringify({
           subject: 'chessvision-session',
           scope: 'engine:verified',
@@ -313,18 +374,18 @@ export const SecurityKeyVaultTab: React.FC = () => {
           clientProofB64Url: challenge.clientProofB64Url,
         }),
       });
-      const data = (await res.json()) as {
+      const parsed = await safeParseJsonBody<{
         token?: string;
         clientThumbprint?: string;
         error?: string;
-      };
-      if (!res.ok || !data.token) {
-        setVaultError(data.error ?? 'Token issuance failed.');
+      }>(res, 'Token issuance failed.');
+      if (!parsed.ok || !parsed.data?.token) {
+        setVaultError(parsed.error ?? 'Token issuance failed.');
         return;
       }
-      setTokenInput(data.token);
-      setIssuedThumbprint(data.clientThumbprint ?? null);
-      await handleVerifyToken(data.token);
+      setTokenInput(parsed.data.token);
+      setIssuedThumbprint(parsed.data.clientThumbprint ?? null);
+      await handleVerifyToken(parsed.data.token);
     } catch (err) {
       setVaultError(err instanceof Error ? err.message : 'Token issuance failed.');
     } finally {
@@ -350,7 +411,7 @@ export const SecurityKeyVaultTab: React.FC = () => {
     const tokenToCheck = (targetToken ?? tokenInput).trim();
     if (!tokenToCheck) return;
 
-    const endpoint = buildApiUrl('/api/security/verify');
+    const endpoint = buildApiUrl(API_ROUTES.vaultVerify, externalServerUrl);
     if (!endpoint) return;
 
     setIsTestingToken(true);
@@ -365,12 +426,17 @@ export const SecurityKeyVaultTab: React.FC = () => {
 
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getServerIdHeaders(externalServerId),
+        },
         body: JSON.stringify({ token: tokenToCheck }),
       });
-      if (res.ok) {
-        const data = (await res.json()) as VerifyResponse;
-        setVerifyResult(data);
+      const parsed = await safeParseJsonBody<VerifyResponse>(res, 'Verification failed.');
+      if (parsed.ok && parsed.data) {
+        setVerifyResult(parsed.data);
+      } else if (parsed.error) {
+        setVaultError(parsed.error);
       }
     } catch (err) {
       setVaultError(err instanceof Error ? err.message : 'Verification failed.');

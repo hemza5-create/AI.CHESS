@@ -311,3 +311,38 @@ if (fs.existsSync(resDir) && fs.existsSync(icon512) && fs.existsSync(icon192)) {
 
   console.log('[configure-android] Replaced Android adaptive & legacy launcher icons');
 }
+
+// 4. Sync Android versionName & versionCode from package.json so APK upgrades cleanly
+const pkgPath = path.join(rootDir, 'package.json');
+const gradleGroovyPath = path.join(rootDir, 'android', 'app', 'build.gradle');
+const gradleKtsPath = path.join(rootDir, 'android', 'app', 'build.gradle.kts');
+const targetGradlePath = fs.existsSync(gradleGroovyPath)
+  ? gradleGroovyPath
+  : fs.existsSync(gradleKtsPath)
+  ? gradleKtsPath
+  : null;
+
+if (fs.existsSync(pkgPath) && targetGradlePath) {
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  const rawVersion = typeof pkg.version === 'string' ? pkg.version.trim() : '';
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(rawVersion);
+  if (match) {
+    const major = Number(match[1]);
+    const minor = Number(match[2]);
+    const patch = Number(match[3]);
+    const versionCode = major * 10000 + minor * 100 + patch;
+    let gradleSrc = fs.readFileSync(targetGradlePath, 'utf8');
+    gradleSrc = gradleSrc
+      .replace(/\bversionCode\s*=?\s*\d+/, (m) =>
+        m.includes('=') ? `versionCode = ${versionCode}` : `versionCode ${versionCode}`
+      )
+      .replace(/\bversionName\s*=?\s*["'][^"']+["']/, (m) =>
+        m.includes('=') ? `versionName = "${rawVersion}"` : `versionName "${rawVersion}"`
+      );
+    fs.writeFileSync(targetGradlePath, gradleSrc, 'utf8');
+    console.log(
+      `[configure-android] Synced ${path.basename(targetGradlePath)} to versionName="${rawVersion}" (versionCode=${versionCode})`
+    );
+  }
+}
+

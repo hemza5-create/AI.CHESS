@@ -10,7 +10,30 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
+  const define: Record<string, string> = {};
+  const rawExtUrl = (process.env.VITE_EXTERNAL_SERVER_URL ?? '').trim();
+  if (rawExtUrl && !/^https?:\/\//i.test(rawExtUrl)) {
+    define['import.meta.env.VITE_EXTERNAL_SERVER_URL'] = JSON.stringify('');
+  }
+  const rawViteId = (process.env.VITE_EXTERNAL_SERVER_ID ?? '').trim();
+  const rawServerId = (process.env.EXTERNAL_SERVER_ID ?? '').trim();
+  if (
+    (rawViteId === 'srv_key_9f8a2c7e' || rawViteId === 'ebd12-cc856') &&
+    (!rawServerId || rawServerId === 'cvsu-uci-core-v2')
+  ) {
+    define['import.meta.env.VITE_EXTERNAL_SERVER_ID'] = JSON.stringify('cvsu-uci-core-v2');
+  }
+  const rawViteExplain = (process.env.VITE_API_ROUTE_EXPLAIN ?? '').trim();
+  if (/\/gemini\//i.test(rawViteExplain) || /^\/api\/v2\/tt$/i.test(rawViteExplain)) {
+    define['import.meta.env.VITE_API_ROUTE_EXPLAIN'] = JSON.stringify('/api/v2/coach/explain');
+  }
+  const rawViteBoard = (process.env.VITE_API_ROUTE_BOARD_SCAN ?? '').trim();
+  if (/\/gemini\//i.test(rawViteBoard)) {
+    define['import.meta.env.VITE_API_ROUTE_BOARD_SCAN'] = JSON.stringify('/api/v2/vision/scan-board');
+  }
+
   return {
+    define,
     plugins: [
       react(),
       tailwindcss(),

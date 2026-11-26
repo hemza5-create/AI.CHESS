@@ -213,6 +213,8 @@ export interface TranslationDictionary {
   hideUrl: string;
   externalServerBtn: string;
   serverUrlPlaceholder: string;
+  externalServerIdLabel: string;
+  externalServerIdPlaceholder: string;
   saveAndConnect: string;
   defaultServerBtn: string;
   serverHelpText: string;
@@ -557,7 +559,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     autoPlaceActiveStatus: 'المزامنة التلقائية عبر API نشطة',
     visionApiEndpointBtn: 'رابط API اللقطات',
     visionApiEndpointLabel: 'نقطة نهاية API لتحليل لقطات الرقعة:',
-    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    visionApiPlaceholder: 'https://your-server.com/api/v2/vision/scan-board',
     saveEndpointBtn: 'حفظ المسار',
     activeEndpointLabel: 'المسار النشط:',
     opponentMoveOnlyBtn: 'نقلة الخصم حصراً',
@@ -646,6 +648,8 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationDictionary> = {
     hideUrl: 'إخفاء الرابط',
     externalServerBtn: 'خادم API الخارجي',
     serverUrlPlaceholder: 'https://your-server.example.com (اختياري)',
+    externalServerIdLabel: 'معرّف الخادم (Server ID):',
+    externalServerIdPlaceholder: 'cvsu-uci-core-v2',
     saveAndConnect: 'حفظ واتصال',
     defaultServerBtn: 'افتراضي',
     serverHelpText:
@@ -1061,7 +1065,7 @@ def analyze_and_explain(uci_move):
     autoPlaceActiveStatus: 'Auto API piece sync active',
     visionApiEndpointBtn: 'Snapshot API URL',
     visionApiEndpointLabel: 'External Snapshot Analysis API Endpoint:',
-    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    visionApiPlaceholder: 'https://your-server.com/api/v2/vision/scan-board',
     saveEndpointBtn: 'Save Endpoint',
     activeEndpointLabel: 'Active endpoint:',
     opponentMoveOnlyBtn: 'Opponent Move Only',
@@ -1150,6 +1154,8 @@ def analyze_and_explain(uci_move):
     hideUrl: 'Hide URL',
     externalServerBtn: 'External API Server',
     serverUrlPlaceholder: 'https://your-server.example.com (optional)',
+    externalServerIdLabel: 'Server ID:',
+    externalServerIdPlaceholder: 'cvsu-uci-core-v2',
     saveAndConnect: 'Save & Connect',
     defaultServerBtn: 'Default',
     serverHelpText:
@@ -1567,7 +1573,7 @@ def analyze_and_explain(uci_move):
     autoPlaceActiveStatus: 'Автосинхронизация API активна',
     visionApiEndpointBtn: 'URL API снимков',
     visionApiEndpointLabel: 'Конечная точка API для анализа снимков доски:',
-    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    visionApiPlaceholder: 'https://your-server.com/api/v2/vision/scan-board',
     saveEndpointBtn: 'Сохранить URL',
     activeEndpointLabel: 'Активный путь:',
     opponentMoveOnlyBtn: 'Только ход соперника',
@@ -1656,6 +1662,8 @@ def analyze_and_explain(uci_move):
     hideUrl: 'Скрыть URL',
     externalServerBtn: 'Внешний API сервер',
     serverUrlPlaceholder: 'https://your-server.example.com (необязательно)',
+    externalServerIdLabel: 'ID сервера:',
+    externalServerIdPlaceholder: 'cvsu-uci-core-v2',
     saveAndConnect: 'Сохранить',
     defaultServerBtn: 'По умолч.',
     serverHelpText:
@@ -2071,7 +2079,7 @@ def analyze_and_explain(uci_move):
     autoPlaceActiveStatus: 'API 自动摆棋同步中',
     visionApiEndpointBtn: '截图 API 端点',
     visionApiEndpointLabel: '棋盘截图识别外部 API 端点：',
-    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    visionApiPlaceholder: 'https://your-server.com/api/v2/vision/scan-board',
     saveEndpointBtn: '保存接口',
     activeEndpointLabel: '当前接口:',
     opponentMoveOnlyBtn: '仅限对手走法',
@@ -2159,6 +2167,8 @@ def analyze_and_explain(uci_move):
     hideUrl: '隐藏地址',
     externalServerBtn: '外部 API 服务器',
     serverUrlPlaceholder: 'https://your-server.example.com (可选)',
+    externalServerIdLabel: '服务器 ID：',
+    externalServerIdPlaceholder: 'cvsu-uci-core-v2',
     saveAndConnect: '保存并连接',
     defaultServerBtn: '默认',
     serverHelpText:
@@ -2565,7 +2575,7 @@ def analyze_and_explain(uci_move):
     autoPlaceActiveStatus: 'Synchro auto par API active',
     visionApiEndpointBtn: 'URL API captures',
     visionApiEndpointLabel: 'Point de terminaison API pour les captures :',
-    visionApiPlaceholder: 'https://your-server.com/api/board-fen',
+    visionApiPlaceholder: 'https://your-server.com/api/v2/vision/scan-board',
     saveEndpointBtn: 'Enregistrer',
     activeEndpointLabel: 'URL active :',
     opponentMoveOnlyBtn: 'Coup adverse seul',
@@ -2654,6 +2664,8 @@ def analyze_and_explain(uci_move):
     hideUrl: 'Masquer URL',
     externalServerBtn: 'Serveur API externe',
     serverUrlPlaceholder: 'https://votre-serveur.exemple.com (optionnel)',
+    externalServerIdLabel: 'ID serveur :',
+    externalServerIdPlaceholder: 'cvsu-uci-core-v2',
     saveAndConnect: 'Enregistrer',
     defaultServerBtn: 'Par défaut',
     serverHelpText:
