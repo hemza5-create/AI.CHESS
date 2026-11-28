@@ -5,6 +5,7 @@
 import 'dotenv/config';
 import express from 'express';
 import type { Request, Response } from 'express';
+import http from 'node:http';
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
@@ -14,6 +15,7 @@ import crypto from 'node:crypto';
 import { Chess } from 'chess.js';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { cryptoKeyVault } from './server/cryptoKeyVault.ts';
+import { OnlineChessHub } from './server/onlineChessHub.ts';
 import {
   checkStockfishOfficialVersion,
   getActiveEngineDescriptors,
@@ -80,6 +82,8 @@ const SERVER_ROUTES = {
   vaultVerify: '/api/v2/vault/verify',
   vaultRotate: '/api/v2/vault/rotate',
   vaultPolicy: '/api/v2/vault/policy',
+  onlineBootstrap: '/api/v2/online/bootstrap',
+  onlineProfile: '/api/v2/online/profile',
 } as const;
 
 function timingSafeEqualString(a: string, b: string): boolean {
@@ -629,10 +633,11 @@ function getGeminiClient(): GoogleGenAI {
 
 async function startServer() {
   const app = express();
-  const isTrustedRequestOrigin = (req: Request): boolean => {
+  const onlineChessHub = new OnlineChessHub(getExpectedServerId);
+  const isTrustedRequestOrigin = (req: http.IncomingMessage): boolean => {
     const origin = req.headers.origin;
     if (!origin || typeof origin !== 'string') {
-      // Non-browser / same-origin calls without Origin header still must pass Bearer verification
+      // Non-browser / same-origin calls without Origin header still must pass channel/token verification
       return true;
     }
     if (origin === 'https://localhost' || origin === 'capacitor://localhost') {
@@ -1597,6 +1602,35 @@ async function startServer() {
     });
   });
 
+  app.get(SERVER_ROUTES.onlineBootstrap, requireTrustedServerChannel, (_req: Request, res: Response) => {
+    res.json({
+      rooms: onlineChessHub.getPublicLobbyRooms(),
+      leaderboard: onlineChessHub.getLeaderboardSnapshot(),
+      matchmaking: onlineChessHub.getMatchmakingStatusForPlayer(''),
+      wsPath: '/ws/online-chess',
+    });
+  });
+
+  app.post(SERVER_ROUTES.onlineProfile, requireTrustedServerChannel, (req: Request, res: Response) => {
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+      playerId?: unknown;
+      name?: unknown;
+      country?: unknown;
+      platform?: unknown;
+    };
+    const profile = onlineChessHub.registerProfileHttp(
+      typeof body.playerId === 'string' ? body.playerId : '',
+      typeof body.name === 'string' ? body.name : 'Player',
+      typeof body.country === 'string' ? body.country : 'INTL',
+      typeof body.platform === 'string' ? body.platform : undefined
+    );
+    res.json({
+      ok: true,
+      profile,
+      leaderboard: onlineChessHub.getLeaderboardSnapshot(),
+    });
+  });
+
   // Ensure unmatched /api/* routes always return valid JSON (never HTML fallback)
   app.use('/api', (_req: Request, res: Response) => {
     res.status(404).json({ error: 'نقطة نهاية API غير موجودة.' });
@@ -1671,7 +1705,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = http.createServer(app);
+  onlineChessHub.attachToServer(httpServer, isTrustedRequestOrigin);
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`ChessVision UCI server listening on http://0.0.0.0:${PORT}`);
   });
 }

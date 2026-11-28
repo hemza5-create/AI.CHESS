@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { Chess } from 'chess.js';
-import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle, ShieldCheck, Lock, Unlock } from 'lucide-react';
+import { Trash2, Loader2, WifiOff, Eye, GraduationCap, Puzzle, ShieldCheck, Lock, Unlock, Swords } from 'lucide-react';
 import { LiveVisionStage } from './components/LiveVisionStage.tsx';
 import { DigitalBoard } from './components/DigitalBoard.tsx';
 import { CapturePreviewPanel } from './components/CapturePreviewPanel.tsx';
@@ -18,6 +18,7 @@ import {
   CURRENT_PUZZLE_STORAGE_KEY,
 } from './components/PuzzlesTab.tsx';
 import { SecurityKeyVaultTab } from './components/SecurityKeyVaultTab.tsx';
+import { OnlinePlayPage } from './components/OnlinePlayPage.tsx';
 import { DeveloperPortalModal } from './components/DeveloperPortalModal.tsx';
 import { LanguageSwitcher } from './components/LanguageSwitcher.tsx';
 import { saveStoredLanguage, useLanguage } from './i18n/LanguageContext.tsx';
@@ -101,9 +102,9 @@ async function parseJsonResponse<T>(
 
 export default function App() {
   const { language, meta, t } = useLanguage();
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'analyzer' | 'coach' | 'puzzles' | 'keyVault'>('analyzer');
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'analyzer' | 'coach' | 'puzzles' | 'keyVault' | 'online'>('analyzer');
   const [source, setSource] = useState<CaptureSource>('virtual');
-  const [isStreaming, setIsStreaming] = useState<boolean>(true);
+  const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<VisionViewMode>('original');
   const [roi, setRoi] = useState<RoiQuad>(DEFAULT_VIRTUAL_ROI);
 
@@ -692,6 +693,20 @@ export default function App() {
     };
   }, [stopMediaTracks, stopAudioPlayback]);
 
+  // Render static virtual board preview when live monitoring is paused
+  useEffect(() => {
+    if (isStreaming || source !== 'virtual') return;
+    const vCanvas = virtualCanvasRef.current;
+    if (!vCanvas) return;
+    renderVirtualBoardToCanvas(
+      vCanvas,
+      virtualChessRef.current.fen(),
+      config.orientation,
+      virtualLastMove,
+      simulateLightingNoise
+    );
+  }, [isStreaming, source, config.orientation, virtualLastMove, simulateLightingNoise]);
+
   // Main Real-Time OpenCV Processing Loop using requestAnimationFrame for smooth 60 FPS pacing
   useEffect(() => {
     if (!isStreaming || source === 'image') return;
@@ -1188,12 +1203,14 @@ export default function App() {
       if (source === 'camera') {
         stopMediaTracks();
       }
+    } else if (source === 'camera') {
+      void startCameraStream();
     } else {
-      if (source === 'camera') {
-        void startCameraStream();
-      } else {
-        setIsStreaming(true);
+      if (source === 'image') {
+        setSource('virtual');
       }
+      pipelineRef.current?.resetBaseline();
+      setIsStreaming(true);
     }
   };
 
@@ -1371,6 +1388,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleToggleStream}
+              aria-pressed={isStreaming}
               className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-md transition-colors whitespace-nowrap shrink-0 shadow-sm ${
                 isStreaming
                   ? 'bg-rose-600 hover:bg-rose-500 text-white'
@@ -1436,13 +1454,33 @@ export default function App() {
           </div>
         </section>
 
-        {/* Clean Image Box (without any text overlay) */}
-        <div className="overflow-hidden rounded-xl border border-slate-400/40 bg-[#0F1522]/20 shadow-lg">
-          <img
-            src="/assets/aistudio/Screenshot_20261125_184553_com_hihonor_photos_SlotAlbumActivity_b33f732c.jpg"
-            alt={t.brandName}
-            className="w-full h-44 sm:h-64 lg:h-80 object-cover object-[center_28%] block select-none"
-          />
+        {/* Clean Image Box + Centered Vertical "إلعب مباشرة" Button Below */}
+        <div className="max-w-4xl mx-auto">
+          <button
+            type="button"
+            onClick={() => setActiveWorkspaceTab('online')}
+            aria-label={language === 'ar' ? 'الدخول إلى اللعب عبر الإنترنت' : 'Open Online Multiplayer'}
+            className="w-full overflow-hidden rounded-xl border border-slate-400/40 bg-[#0F1522]/20 shadow-lg block cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 transition-transform active:scale-[0.995]"
+          >
+            <img
+              src="/assets/aistudio/1795736425245_8118926f.jpg"
+              alt={t.brandName}
+              className="w-full aspect-video object-cover object-center block select-none"
+            />
+          </button>
+
+          {/* Vertical "إلعب مباشرة" button centered below the main image */}
+          <div className="flex justify-center mt-2.5">
+            <button
+              type="button"
+              data-testid="play-live-vertical-button"
+              onClick={() => setActiveWorkspaceTab('online')}
+              className="w-24 sm:w-28 min-h-[84px] sm:min-h-[96px] py-3 px-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 active:scale-[0.98] text-slate-950 border border-cyan-200/80 shadow-lg flex flex-col items-center justify-center gap-1.5 text-center font-bold text-xs sm:text-sm leading-tight transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <Swords className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+              <span>إلعب مباشرة</span>
+            </button>
+          </div>
         </div>
 
         {/* Workspace Mode Tabs: Board & Vision | Interactive Coach | Solve Puzzles */}
@@ -1508,6 +1546,14 @@ export default function App() {
         {activeWorkspaceTab === 'coach' && <InteractiveCoachTab />}
 
         {activeWorkspaceTab === 'puzzles' && <PuzzlesTab />}
+
+        {activeWorkspaceTab === 'online' && (
+          <OnlinePlayPage
+            externalServerUrl={externalServerUrl}
+            externalServerId={externalServerId}
+            onBackToMain={() => setActiveWorkspaceTab('analyzer')}
+          />
+        )}
 
         {activeWorkspaceTab === 'keyVault' && isVaultAdminUnlocked && (
           <SecurityKeyVaultTab

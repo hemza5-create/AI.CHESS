@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { createAttestedChallenge } from '../security/antiReverseGuard.ts';
+import type { ClientPlatform } from '../types/onlineChess.ts';
 
 const EXTERNAL_SERVER_STORAGE_KEY = 'chess_vision_external_server_url';
 const EXTERNAL_SERVER_ID_STORAGE_KEY = 'chess_vision_external_server_id';
@@ -25,6 +26,33 @@ export type ActiveEngineSource = 'local-wasm' | 'local-asm';
 export function isCapacitorNativeRuntime(): boolean {
   const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
   return Boolean(cap?.isNativePlatform?.());
+}
+
+export function detectClientPlatform(): ClientPlatform {
+  const cap = (globalThis as { Capacitor?: { getPlatform?: () => string; isNativePlatform?: () => boolean } }).Capacitor;
+  const capPlatform = cap?.getPlatform?.();
+  if (cap?.isNativePlatform?.()) {
+    if (capPlatform === 'ios') return 'ios';
+    if (capPlatform === 'android') return 'android';
+  }
+
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  if (/Android/i.test(ua)) return 'android';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(display-mode: standalone)').matches
+  ) {
+    return 'pwa';
+  }
+
+  if (/Electron|Windows NT|Macintosh|X11|Linux x86_64/i.test(ua)) {
+    return 'desktop';
+  }
+
+  return 'web';
 }
 
 export function normalizeServerBaseUrl(rawUrl: string): string {
@@ -128,6 +156,32 @@ export function buildApiUrl(apiPath: string, externalServerUrl?: string): string
 
   // Same-origin web browser / PWA server
   return normalizedPath;
+}
+
+export function buildWebSocketUrl(wsPath: string, externalServerUrl?: string): string | null {
+  const normalizedPath = wsPath.startsWith('/') ? wsPath : `/${wsPath}`;
+  const resolvedBase = normalizeServerBaseUrl(externalServerUrl ?? getStoredExternalServerUrl());
+
+  if (resolvedBase) {
+    try {
+      const parsed = new URL(resolvedBase);
+      const wsProto = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProto}//${parsed.host}${normalizedPath}`;
+    } catch {
+      return null;
+    }
+  }
+
+  if (isCapacitorNativeRuntime()) {
+    return null;
+  }
+
+  if (typeof window !== 'undefined' && window.location?.host) {
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProto}//${window.location.host}${normalizedPath}`;
+  }
+
+  return null;
 }
 
 export function normalizeServerId(rawId: string): string {
@@ -240,6 +294,8 @@ export function getConfiguredApiRoutes() {
     vaultVerify: '/api/v2/vault/verify',
     vaultRotate: '/api/v2/vault/rotate',
     vaultPolicy: '/api/v2/vault/policy',
+    onlineBootstrap: '/api/v2/online/bootstrap',
+    onlineProfile: '/api/v2/online/profile',
   } as const;
 }
 

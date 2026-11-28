@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "totalCompletedGames": 0,
+  "profiles": {
+    "plr_23b3a7074e72044f": {
+      "playerId": "plr_23b3a7074e72044f",
+      "name": "HEMZA55",
+      "country": "DZ",
+      "elo": 1200,
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "gamesPlayed": 0,
+      "streak": 0,
+      "bestElo": 1200,
+      "updatedAt": 1795832491188,
+      "platform": "web"
+    }
+  }
+}

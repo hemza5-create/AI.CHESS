@@ -17,6 +17,7 @@ interface TacticalBoardProps {
   showEvalBar?: boolean;
   showHintArrow?: boolean;
   disabled?: boolean;
+  boardSize?: 'default' | 'large';
   onMoveAttempt: (from: string, to: string, promotion?: string) => boolean | void;
 }
 
@@ -91,6 +92,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
   showEvalBar = true,
   showHintArrow = true,
   disabled = false,
+  boardSize = 'default',
   onMoveAttempt,
 }) => {
   const { t } = useLanguage();
@@ -210,7 +212,13 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
         </div>
       )}
 
-      <div className="flex-1 max-w-[348px] sm:max-w-[504px] select-none">
+      <div
+        className={`flex-1 select-none ${
+          boardSize === 'large'
+            ? 'max-w-[440px] sm:max-w-[640px] lg:max-w-[680px]'
+            : 'max-w-[348px] sm:max-w-[504px]'
+        }`}
+      >
         <div className="grid grid-cols-[18px_1fr_18px] sm:grid-cols-[22px_1fr_22px] grid-rows-[18px_1fr_18px] sm:grid-rows-[22px_1fr_22px] bg-[#0B101B]/40 backdrop-blur-sm border border-slate-400/45 rounded-lg p-0.5 shadow-inner">
           <div aria-hidden="true" />
           <div className="grid grid-cols-8 items-center">

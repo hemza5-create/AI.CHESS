@@ -1,0 +1,376 @@
+{
+  "entities": {
+    "CloudRanking": {
+      "title": "CloudRanking",
+      "description": "Public international cross-platform player rating and statistics entry without PII.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32
+        },
+        "country": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 8,
+          "pattern": "^[A-Z]{2,8}$"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["web", "android", "ios", "desktop", "pwa"]
+        },
+        "elo": {
+          "type": "number"
+        },
+        "bestElo": {
+          "type": "number"
+        },
+        "wins": {
+          "type": "number"
+        },
+        "losses": {
+          "type": "number"
+        },
+        "draws": {
+          "type": "number"
+        },
+        "gamesPlayed": {
+          "type": "number"
+        },
+        "streak": {
+          "type": "number"
+        },
+        "lastMatchId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "country",
+        "platform",
+        "elo",
+        "bestElo",
+        "wins",
+        "losses",
+        "draws",
+        "gamesPlayed",
+        "streak",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MatchmakingQueueEntry": {
+      "title": "MatchmakingQueueEntry",
+      "description": "Cross-platform player search ticket in the global matchmaking waiting queue.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32
+        },
+        "country": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 8,
+          "pattern": "^[A-Z]{2,8}$"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["web", "android", "ios", "desktop", "pwa"]
+        },
+        "elo": {
+          "type": "number"
+        },
+        "timeControlId": {
+          "type": "string",
+          "enum": ["3+2", "5+0", "10+0", "15+10"]
+        },
+        "targetPlatform": {
+          "type": "string",
+          "enum": ["all", "web", "android", "ios", "desktop", "pwa"]
+        },
+        "targetCountry": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 8,
+          "pattern": "^[A-Z]{2,8}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["searching", "matched"]
+        },
+        "matchedMatchId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "matchedByUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "country",
+        "platform",
+        "elo",
+        "timeControlId",
+        "targetPlatform",
+        "targetCountry",
+        "status",
+        "matchedMatchId",
+        "matchedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudMatch": {
+      "title": "CloudMatch",
+      "description": "Synchronized global chess match room across Web, Android, iOS, Desktop, and PWA.",
+      "type": "object",
+      "properties": {
+        "matchId": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[A-Z0-9]{6}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "timeControlId": {
+          "type": "string",
+          "enum": ["3+2", "5+0", "10+0", "15+10"]
+        },
+        "isPrivate": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["waiting", "playing", "finished"]
+        },
+        "createdByUid": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "whiteUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "whiteName": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "whiteCountry": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "whitePlatform": {
+          "type": "string",
+          "enum": ["web", "android", "ios", "desktop", "pwa"]
+        },
+        "whiteElo": {
+          "type": "number"
+        },
+        "blackUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "blackName": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "blackCountry": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "blackPlatform": {
+          "type": "string",
+          "enum": ["web", "android", "ios", "desktop", "pwa"]
+        },
+        "blackElo": {
+          "type": "number"
+        },
+        "fen": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 120
+        },
+        "turn": {
+          "type": "string",
+          "enum": ["w", "b"]
+        },
+        "whiteTimeMs": {
+          "type": "number"
+        },
+        "blackTimeMs": {
+          "type": "number"
+        },
+        "lastMoveFrom": {
+          "type": "string",
+          "maxLength": 4
+        },
+        "lastMoveTo": {
+          "type": "string",
+          "maxLength": 4
+        },
+        "lastMoveSan": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "moveCount": {
+          "type": "number"
+        },
+        "movesSan": {
+          "type": "array"
+        },
+        "winner": {
+          "type": "string",
+          "enum": ["", "w", "b", "draw"]
+        },
+        "endReason": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "drawOfferBy": {
+          "type": "string",
+          "enum": ["", "w", "b"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "matchId",
+        "code",
+        "title",
+        "timeControlId",
+        "isPrivate",
+        "status",
+        "createdByUid",
+        "whiteUid",
+        "whiteName",
+        "whiteCountry",
+        "whitePlatform",
+        "whiteElo",
+        "blackUid",
+        "blackName",
+        "blackCountry",
+        "blackPlatform",
+        "blackElo",
+        "fen",
+        "turn",
+        "whiteTimeMs",
+        "blackTimeMs",
+        "lastMoveFrom",
+        "lastMoveTo",
+        "lastMoveSan",
+        "moveCount",
+        "movesSan",
+        "winner",
+        "endReason",
+        "drawOfferBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CloudMatchChat": {
+      "title": "CloudMatchChat",
+      "description": "In-room chat message authored by a match participant.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "country": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 8
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 180
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "name", "country", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/rankings/{uid}": {
+      "schema": { "$ref": "#/entities/CloudRanking" },
+      "description": "Public cross-platform chess leaderboard entries keyed by Firebase user UID."
+    },
+    "/matchmakingQueue/{queueId}": {
+      "schema": { "$ref": "#/entities/MatchmakingQueueEntry" },
+      "description": "Global cross-platform waiting queue keyed by seeker UID."
+    },
+    "/matches/{matchId}": {
+      "schema": { "$ref": "#/entities/CloudMatch" },
+      "description": "Global synchronized chess match documents shared across Web, Android, iOS, Desktop, and PWA."
+    },
+    "/matches/{matchId}/chat/{messageId}": {
+      "schema": { "$ref": "#/entities/CloudMatchChat" },
+      "description": "Subcollection of chat messages scoped strictly to participants of the parent match."
+    }
+  }
+}

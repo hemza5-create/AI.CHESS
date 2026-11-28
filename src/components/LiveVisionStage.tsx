@@ -188,6 +188,7 @@ export const LiveVisionStage: React.FC<LiveVisionStageProps> = ({
             <button
               type="button"
               onClick={onToggleStream}
+              aria-pressed={isStreaming}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold rounded-md transition-colors whitespace-nowrap shrink-0 shadow-sm ${
                 isStreaming
                   ? 'bg-rose-600 hover:bg-rose-500 text-white'

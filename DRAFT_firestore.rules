@@ -1,0 +1,410 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 4 (Phase 4.1): Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Health-check endpoint used strictly by startup testConnection()
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+
+    // -------------------------------------------------------------------------
+    // Pillar 3: Reusable Hardened Primitives
+    // -------------------------------------------------------------------------
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'hemzaharigui5@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 2 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidPlatform(val) {
+      return val is string && val in ['web', 'android', 'ios', 'desktop', 'pwa'];
+    }
+
+    function isValidPlatformFilter(val) {
+      return val is string && val in ['all', 'web', 'android', 'ios', 'desktop', 'pwa'];
+    }
+
+    function isValidTimeControl(val) {
+      return val is string && val in ['3+2', '5+0', '10+0', '15+10'];
+    }
+
+    function isValidCountryCode(val) {
+      return val is string && val.size() >= 2 && val.size() <= 8 && val.matches('^[A-Z]{2,8}$');
+    }
+
+    // -------------------------------------------------------------------------
+    // Pillar 2: Standalone Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidRanking(data) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'country', 'platform',
+          'elo', 'bestElo', 'wins', 'losses', 'draws',
+          'gamesPlayed', 'streak', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'country', 'platform',
+          'elo', 'bestElo', 'wins', 'losses', 'draws',
+          'gamesPlayed', 'streak', 'lastMatchId', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 32
+        && isValidCountryCode(data.country)
+        && isValidPlatform(data.platform)
+        && data.elo is number && data.elo >= 400 && data.elo <= 3500
+        && data.bestElo is number && data.bestElo >= 400 && data.bestElo <= 3500
+        && data.wins is number && data.wins >= 0
+        && data.losses is number && data.losses >= 0
+        && data.draws is number && data.draws >= 0
+        && data.gamesPlayed is number && data.gamesPlayed >= 0
+        && data.streak is number && data.streak >= -500 && data.streak <= 500
+        && (!('lastMatchId' in data) || (data.lastMatchId is string && data.lastMatchId.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidQueueEntry(data) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'country', 'platform', 'elo',
+          'timeControlId', 'targetPlatform', 'targetCountry',
+          'status', 'matchedMatchId', 'matchedByUid', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'country', 'platform', 'elo',
+          'timeControlId', 'targetPlatform', 'targetCountry',
+          'status', 'matchedMatchId', 'matchedByUid', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 32
+        && isValidCountryCode(data.country)
+        && isValidPlatform(data.platform)
+        && data.elo is number && data.elo >= 400 && data.elo <= 3500
+        && isValidTimeControl(data.timeControlId)
+        && isValidPlatformFilter(data.targetPlatform)
+        && isValidCountryCode(data.targetCountry)
+        && data.status is string && data.status in ['searching', 'matched']
+        && data.matchedMatchId is string && data.matchedMatchId.size() <= 128
+        && data.matchedByUid is string && data.matchedByUid.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMatch(data) {
+      return data.keys().hasAll([
+          'matchId', 'code', 'title', 'timeControlId', 'isPrivate', 'status', 'createdByUid',
+          'whiteUid', 'whiteName', 'whiteCountry', 'whitePlatform', 'whiteElo',
+          'blackUid', 'blackName', 'blackCountry', 'blackPlatform', 'blackElo',
+          'fen', 'turn', 'whiteTimeMs', 'blackTimeMs',
+          'lastMoveFrom', 'lastMoveTo', 'lastMoveSan',
+          'moveCount', 'movesSan', 'winner', 'endReason', 'drawOfferBy',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'matchId', 'code', 'title', 'timeControlId', 'isPrivate', 'status', 'createdByUid',
+          'whiteUid', 'whiteName', 'whiteCountry', 'whitePlatform', 'whiteElo',
+          'blackUid', 'blackName', 'blackCountry', 'blackPlatform', 'blackElo',
+          'fen', 'turn', 'whiteTimeMs', 'blackTimeMs',
+          'lastMoveFrom', 'lastMoveTo', 'lastMoveSan',
+          'moveCount', 'movesSan', 'winner', 'endReason', 'drawOfferBy',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.matchId)
+        && data.code is string && data.code.size() == 6 && data.code.matches('^[A-Z0-9]{6}$')
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 40
+        && isValidTimeControl(data.timeControlId)
+        && data.isPrivate is bool
+        && data.status is string && data.status in ['waiting', 'playing', 'finished']
+        && isValidId(data.createdByUid)
+        && data.whiteUid is string && data.whiteUid.size() <= 128
+        && data.whiteName is string && data.whiteName.size() <= 32
+        && data.whiteCountry is string && data.whiteCountry.size() <= 8
+        && isValidPlatform(data.whitePlatform)
+        && data.whiteElo is number && data.whiteElo >= 0 && data.whiteElo <= 3500
+        && data.blackUid is string && data.blackUid.size() <= 128
+        && data.blackName is string && data.blackName.size() <= 32
+        && data.blackCountry is string && data.blackCountry.size() <= 8
+        && isValidPlatform(data.blackPlatform)
+        && data.blackElo is number && data.blackElo >= 0 && data.blackElo <= 3500
+        && data.fen is string && data.fen.size() >= 10 && data.fen.size() <= 120
+        && data.turn is string && data.turn in ['w', 'b']
+        && data.whiteTimeMs is number && data.whiteTimeMs >= 0 && data.whiteTimeMs <= 7200000
+        && data.blackTimeMs is number && data.blackTimeMs >= 0 && data.blackTimeMs <= 7200000
+        && data.lastMoveFrom is string && data.lastMoveFrom.size() <= 4
+        && data.lastMoveTo is string && data.lastMoveTo.size() <= 4
+        && data.lastMoveSan is string && data.lastMoveSan.size() <= 16
+        && data.moveCount is number && data.moveCount >= 0 && data.moveCount <= 300
+        && data.movesSan is list && data.movesSan.size() <= 300
+        && (data.movesSan.size() == 0 || (data.movesSan[0] is string && data.movesSan[0].size() <= 16))
+        && data.winner is string && data.winner in ['', 'w', 'b', 'draw']
+        && data.endReason is string && data.endReason.size() <= 32
+        && data.drawOfferBy is string && data.drawOfferBy.size() <= 1 && data.drawOfferBy in ['', 'w', 'b']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['uid', 'name', 'country', 'text', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'name', 'country', 'text', 'createdAt'])
+        && isValidId(data.uid)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 32
+        && isValidCountryCode(data.country)
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 180
+        && data.createdAt is timestamp;
+    }
+
+    function isMatchParticipant(matchId) {
+      return exists(/databases/$(database)/documents/matches/$(matchId)) && (
+        get(/databases/$(database)/documents/matches/$(matchId)).data.whiteUid == request.auth.uid ||
+        get(/databases/$(database)/documents/matches/$(matchId)).data.blackUid == request.auth.uid
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection 1: /rankings/{uid} (Public Leaderboard - No PII)
+    // -------------------------------------------------------------------------
+    match /rankings/{uid} {
+      allow get: if isVerifiedUser() && isValidId(uid);
+      allow list: if isVerifiedUser() && resource.data.elo is number;
+
+      allow create: if isVerifiedUser()
+        && isValidId(uid)
+        && isValidRanking(incoming())
+        && uid == request.auth.uid
+        && incoming().uid == request.auth.uid
+        && incoming().elo == 1200
+        && incoming().bestElo == 1200
+        && incoming().wins == 0
+        && incoming().losses == 0
+        && incoming().draws == 0
+        && incoming().gamesPlayed == 0
+        && incoming().streak == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(uid)
+        && isValidRanking(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            uid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'country', 'platform', 'updatedAt'
+            ])
+          )
+          || (
+            uid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'elo', 'bestElo', 'wins', 'losses', 'draws', 'gamesPlayed', 'streak', 'lastMatchId', 'updatedAt'
+            ])
+            && incoming().lastMatchId is string
+            && isValidId(incoming().lastMatchId)
+            && (!('lastMatchId' in existing()) || incoming().lastMatchId != existing().lastMatchId)
+            && incoming().gamesPlayed == existing().gamesPlayed + 1
+            && incoming().elo >= existing().elo - 48
+            && incoming().elo <= existing().elo + 48
+            && exists(/databases/$(database)/documents/matches/$(incoming().lastMatchId))
+            && get(/databases/$(database)/documents/matches/$(incoming().lastMatchId)).data.status == 'finished'
+            && (
+              get(/databases/$(database)/documents/matches/$(incoming().lastMatchId)).data.whiteUid == uid ||
+              get(/databases/$(database)/documents/matches/$(incoming().lastMatchId)).data.blackUid == uid
+            )
+          )
+        );
+
+      allow delete: if isAdmin() && isValidId(uid);
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection 2: /matchmakingQueue/{queueId} (Global Cross-Platform Queue)
+    // -------------------------------------------------------------------------
+    match /matchmakingQueue/{queueId} {
+      allow get: if isVerifiedUser() && isValidId(queueId);
+      allow list: if isVerifiedUser() && resource.data.status in ['searching', 'matched'];
+
+      allow create: if isVerifiedUser()
+        && isValidId(queueId)
+        && isValidQueueEntry(incoming())
+        && queueId == request.auth.uid
+        && incoming().uid == request.auth.uid
+        && incoming().status == 'searching'
+        && incoming().matchedMatchId == ''
+        && incoming().matchedByUid == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(queueId)
+        && isValidQueueEntry(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            queueId == request.auth.uid
+            && incoming().status == 'searching'
+            && incoming().matchedMatchId == ''
+            && incoming().matchedByUid == ''
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'country', 'platform', 'elo', 'timeControlId', 'targetPlatform', 'targetCountry', 'status', 'matchedMatchId', 'matchedByUid', 'updatedAt'
+            ])
+          )
+          || (
+            queueId != request.auth.uid
+            && existing().status == 'searching'
+            && incoming().status == 'matched'
+            && isValidId(incoming().matchedMatchId)
+            && incoming().matchedByUid == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'matchedMatchId', 'matchedByUid', 'updatedAt'
+            ])
+            && existsAfter(/databases/$(database)/documents/matches/$(incoming().matchedMatchId))
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(queueId) && (queueId == request.auth.uid || isAdmin());
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection 3: /matches/{matchId} & Master Gate /chat/{messageId}
+    // -------------------------------------------------------------------------
+    match /matches/{matchId} {
+      allow get: if isVerifiedUser() && isValidId(matchId);
+      allow list: if isVerifiedUser() && (
+        resource.data.isPrivate == false ||
+        resource.data.whiteUid == request.auth.uid ||
+        resource.data.blackUid == request.auth.uid
+      );
+
+      allow create: if isVerifiedUser()
+        && isValidId(matchId)
+        && isValidMatch(incoming())
+        && incoming().matchId == matchId
+        && incoming().createdByUid == request.auth.uid
+        && (incoming().whiteUid == request.auth.uid || incoming().blackUid == request.auth.uid)
+        && incoming().status in ['waiting', 'playing']
+        && incoming().moveCount == 0
+        && incoming().winner == ''
+        && incoming().endReason == ''
+        && incoming().drawOfferBy == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(matchId)
+        && isValidMatch(incoming())
+        && existing().status != 'finished'
+        && incoming().matchId == existing().matchId
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().status == 'waiting'
+            && incoming().status == 'playing'
+            && (
+              (
+                existing().whiteUid == ''
+                && incoming().whiteUid == request.auth.uid
+                && incoming().blackUid == existing().blackUid
+                && incoming().diff(existing()).affectedKeys().hasOnly([
+                  'whiteUid', 'whiteName', 'whiteCountry', 'whitePlatform', 'whiteElo', 'status', 'updatedAt'
+                ])
+              )
+              || (
+                existing().blackUid == ''
+                && incoming().blackUid == request.auth.uid
+                && incoming().whiteUid == existing().whiteUid
+                && incoming().diff(existing()).affectedKeys().hasOnly([
+                  'blackUid', 'blackName', 'blackCountry', 'blackPlatform', 'blackElo', 'status', 'updatedAt'
+                ])
+              )
+            )
+          )
+          || (
+            existing().status == 'playing'
+            && (request.auth.uid == existing().whiteUid || request.auth.uid == existing().blackUid)
+            && incoming().whiteUid == existing().whiteUid
+            && incoming().blackUid == existing().blackUid
+            && (
+              (existing().turn == 'w' && request.auth.uid == existing().whiteUid) ||
+              (existing().turn == 'b' && request.auth.uid == existing().blackUid)
+            )
+            && incoming().turn != existing().turn
+            && incoming().moveCount == existing().moveCount + 1
+            && (
+              (incoming().status == 'playing' && incoming().winner == '' && incoming().endReason == '') ||
+              (incoming().status == 'finished' && incoming().winner in ['w', 'b', 'draw'] && incoming().endReason.size() > 0)
+            )
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'fen', 'turn', 'whiteTimeMs', 'blackTimeMs',
+              'lastMoveFrom', 'lastMoveTo', 'lastMoveSan',
+              'moveCount', 'movesSan', 'drawOfferBy',
+              'status', 'winner', 'endReason', 'updatedAt'
+            ])
+          )
+          || (
+            existing().status == 'playing'
+            && (request.auth.uid == existing().whiteUid || request.auth.uid == existing().blackUid)
+            && incoming().status == 'playing'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['drawOfferBy', 'updatedAt'])
+          )
+          || (
+            existing().status == 'playing'
+            && (request.auth.uid == existing().whiteUid || request.auth.uid == existing().blackUid)
+            && incoming().status == 'finished'
+            && incoming().winner in ['w', 'b', 'draw']
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'winner', 'endReason', 'drawOfferBy', 'whiteTimeMs', 'blackTimeMs', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser()
+        && isValidId(matchId)
+        && ((existing().status == 'waiting' && existing().createdByUid == request.auth.uid) || isAdmin());
+
+      match /chat/{messageId} {
+        allow get: if isVerifiedUser() && isValidId(matchId) && isValidId(messageId) && isMatchParticipant(matchId);
+        allow list: if isVerifiedUser() && isValidId(matchId) && isMatchParticipant(matchId);
+        allow create: if isVerifiedUser()
+          && isValidId(matchId)
+          && isValidId(messageId)
+          && isValidChat(incoming())
+          && isMatchParticipant(matchId)
+          && incoming().uid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
