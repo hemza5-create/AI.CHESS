@@ -37,6 +37,23 @@ if (missingLines.length > 0) {
   console.log('[configure-android] Added CAMERA permissions & features to AndroidManifest.xml');
 }
 
+// 1b. Ensure deep-link return intent-filter for com.hemza.aichess://auth-complete
+if (!manifest.includes('android:scheme="com.hemza.aichess"')) {
+  const authIntentFilter = `
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.hemza.aichess" android:host="auth-complete" />
+            </intent-filter>`;
+  manifest = manifest.replace(
+    /(<activity[^>]*android:name="[^"]*MainActivity"[^>]*>)/,
+    `$1${authIntentFilter}`
+  );
+  fs.writeFileSync(manifestPath, manifest, 'utf8');
+  console.log('[configure-android] Added com.hemza.aichess://auth-complete intent-filter to AndroidManifest.xml');
+}
+
 // 2. Patch MainActivity.java or MainActivity.kt to bridge WebView PermissionRequest + runtime CAMERA permission
 const javaBaseDir = path.join(androidMainDir, 'java');
 function findMainActivity(dir) {
@@ -59,13 +76,19 @@ if (mainActivityPath && mainActivityPath.endsWith('.java')) {
   if (!javaSrc.includes('BridgeWebChromeClient')) {
     const importsBlock = [
       'import android.Manifest;',
+      'import android.content.Intent;',
       'import android.content.pm.PackageManager;',
+      'import android.net.Uri;',
       'import android.os.Bundle;',
+      'import android.os.Message;',
       'import android.webkit.PermissionRequest;',
+      'import android.webkit.WebResourceRequest;',
+      'import android.webkit.WebView;',
       'import androidx.annotation.NonNull;',
       'import androidx.core.app.ActivityCompat;',
       'import androidx.core.content.ContextCompat;',
       'import com.getcapacitor.BridgeWebChromeClient;',
+      'import com.getcapacitor.BridgeWebViewClient;',
       'import java.util.ArrayList;',
       'import java.util.List;',
     ].join('\n');
@@ -79,6 +102,22 @@ if (mainActivityPath && mainActivityPath.endsWith('.java')) {
     private static final int WEB_MEDIA_PERMISSION_REQUEST_CODE = 1001;
     private PermissionRequest pendingWebPermissionRequest;
 
+    private boolean openExternalAuthIfNeeded(Uri uri) {
+        if (uri == null) return false;
+        String urlStr = uri.toString();
+        if (urlStr.contains("mobileAuthSession=") || urlStr.contains("accounts.google.com/")) {
+            try {
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, uri);
+                browserIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+                startActivity(browserIntent);
+                return true;
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -88,7 +127,40 @@ if (mainActivityPath && mainActivityPath.endsWith('.java')) {
         }
 
         if (this.bridge != null && this.bridge.getWebView() != null) {
+            this.bridge.getWebView().getSettings().setSupportMultipleWindows(true);
+            this.bridge.getWebView().setWebViewClient(new BridgeWebViewClient(this.bridge) {
+                @Override
+                public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                    if (request != null && openExternalAuthIfNeeded(request.getUrl())) {
+                        return true;
+                    }
+                    return super.shouldOverrideUrlLoading(view, request);
+                }
+            });
             this.bridge.getWebView().setWebChromeClient(new BridgeWebChromeClient(this.bridge) {
+                @Override
+                public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                    WebView.HitTestResult result = view.getHitTestResult();
+                    if (result != null && result.getExtra() != null && openExternalAuthIfNeeded(Uri.parse(result.getExtra()))) {
+                        return false;
+                    }
+                    WebView tempWebView = new WebView(view.getContext());
+                    tempWebView.setWebViewClient(new android.webkit.WebViewClient() {
+                        @Override
+                        public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
+                            if (req != null && req.getUrl() != null) {
+                                openExternalAuthIfNeeded(req.getUrl());
+                            }
+                            v.destroy();
+                            return true;
+                        }
+                    });
+                    WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                    transport.setWebView(tempWebView);
+                    resultMsg.sendToTarget();
+                    return true;
+                }
+
                 @Override
                 public void onPermissionRequest(final PermissionRequest request) {
                     runOnUiThread(() -> {

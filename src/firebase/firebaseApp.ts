@@ -2,10 +2,12 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
+  signInWithCredential,
   signInWithPopup,
   signOut,
   type Auth,
   type User,
+  type UserCredential,
 } from 'firebase/auth';
 import {
   doc,
@@ -88,9 +90,72 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
+export async function signInWithGooglePopupRaw(): Promise<UserCredential> {
+  return signInWithPopup(auth, googleProvider);
+}
+
 export async function signInWithGooglePopup(): Promise<User> {
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
+}
+
+export async function signInWithGoogleCredential(
+  idToken?: string | null,
+  accessToken?: string | null
+): Promise<User> {
+  const credential = GoogleAuthProvider.credential(idToken ?? null, accessToken ?? null);
+  const result = await signInWithCredential(auth, credential);
+  return result.user;
+}
+
+export function extractGoogleOAuthTokens(result: UserCredential): {
+  idToken: string;
+  accessToken: string;
+} {
+  const cred = GoogleAuthProvider.credentialFromResult(result);
+  return {
+    idToken: cred?.idToken ?? '',
+    accessToken: cred?.accessToken ?? '',
+  };
+}
+
+export interface ParsedFirebaseAuthError {
+  code: string;
+  message: string;
+  hostname: string;
+  consoleUrl: string;
+}
+
+export function parseFirebaseAuthError(err: unknown): ParsedFirebaseAuthError {
+  const rawMessage = err instanceof Error ? err.message : String(err);
+  const rawCode =
+    err && typeof err === 'object' && 'code' in err && typeof (err as { code?: unknown }).code === 'string'
+      ? (err as { code: string }).code
+      : '';
+  const hostname =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname
+      : 'localhost';
+  const consoleUrl = `https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`;
+
+  const code =
+    rawCode ||
+    (rawMessage.includes('auth/unauthorized-domain')
+      ? 'auth/unauthorized-domain'
+      : rawMessage.includes('auth/popup-blocked')
+      ? 'auth/popup-blocked'
+      : rawMessage.includes('auth/popup-closed-by-user')
+      ? 'auth/popup-closed-by-user'
+      : rawMessage.includes('auth/network-request-failed')
+      ? 'auth/network-request-failed'
+      : 'auth/unknown');
+
+  return {
+    code,
+    message: rawMessage || 'Google Sign-In failed.',
+    hostname,
+    consoleUrl,
+  };
 }
 
 export async function signOutFirebase(): Promise<void> {

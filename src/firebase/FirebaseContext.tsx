@@ -1,10 +1,22 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
+  buildApiUrl,
+  getConfiguredApiRoutes,
+  getServerIdHeaders,
+  getStoredExternalServerId,
+  isCapacitorNativeRuntime,
+  normalizeServerBaseUrl,
+  safeParseJsonBody,
+} from '../utils/networkAndServer.ts';
+import {
   auth,
+  parseFirebaseAuthError,
+  signInWithGoogleCredential,
   signInWithGooglePopup,
   signOutFirebase,
   testFirestoreConnection,
+  type ParsedFirebaseAuthError,
 } from './firebaseApp.ts';
 
 interface FirebaseContextValue {
@@ -13,7 +25,8 @@ interface FirebaseContextValue {
   cloudReachable: boolean;
   authBusy: boolean;
   authError: string | null;
-  signInWithGoogle: () => Promise<User | null>;
+  authErrorInfo: ParsedFirebaseAuthError | null;
+  signInWithGoogle: (bridgeServerUrl?: string, bridgeServerId?: string) => Promise<User | null>;
   signOut: () => Promise<void>;
   clearAuthError: () => void;
 }
@@ -24,10 +37,84 @@ const FirebaseContext = createContext<FirebaseContextValue>({
   cloudReachable: true,
   authBusy: false,
   authError: null,
+  authErrorInfo: null,
   signInWithGoogle: async () => null,
   signOut: async () => undefined,
   clearAuthError: () => undefined,
 });
+
+async function attemptHostedMobileAuthBridge(
+  serverBaseUrl: string,
+  serverId: string
+): Promise<User | null> {
+  const routes = getConfiguredApiRoutes();
+  const startUrl = buildApiUrl(routes.mobileAuthStart, serverBaseUrl);
+  const pollUrl = buildApiUrl(routes.mobileAuthPoll, serverBaseUrl);
+  if (!startUrl || !pollUrl) return null;
+
+  const startRes = await fetch(startUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getServerIdHeaders(serverId),
+    },
+    body: JSON.stringify({}),
+  });
+  const startParsed = await safeParseJsonBody<{ sessionId?: string; writeSecret?: string }>(startRes);
+  if (!startParsed.ok || !startParsed.data?.sessionId || !startParsed.data?.writeSecret) {
+    return null;
+  }
+
+  const { sessionId, writeSecret } = startParsed.data;
+  const bridgePageUrl = `${serverBaseUrl}/?mobileAuthSession=${encodeURIComponent(
+    sessionId
+  )}&s=${encodeURIComponent(writeSecret)}&sid=${encodeURIComponent(serverId)}`;
+
+  // Open in system Chrome browser on Capacitor Android (intercepted by MainActivity or target _blank)
+  const popup = window.open(bridgePageUrl, '_blank', 'noopener');
+  if (!popup) {
+    const anchor = document.createElement('a');
+    anchor.href = bridgePageUrl;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
+
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 1500));
+    try {
+      const pollRes = await fetch(pollUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getServerIdHeaders(serverId),
+        },
+        body: JSON.stringify({ sessionId, writeSecret }),
+      });
+      if (pollRes.status === 404) {
+        return null;
+      }
+      const pollParsed = await safeParseJsonBody<{
+        status?: 'pending' | 'completed';
+        idToken?: string;
+        accessToken?: string;
+      }>(pollRes);
+      if (pollParsed.ok && pollParsed.data?.status === 'completed') {
+        const { idToken, accessToken } = pollParsed.data;
+        if (idToken || accessToken) {
+          return await signInWithGoogleCredential(idToken ?? null, accessToken ?? null);
+        }
+        return null;
+      }
+    } catch {
+      // Transient network hiccup while browser is active; continue polling until deadline
+    }
+  }
+  return null;
+}
 
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -35,6 +122,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [cloudReachable, setCloudReachable] = useState<boolean>(true);
   const [authBusy, setAuthBusy] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authErrorInfo, setAuthErrorInfo] = useState<ParsedFirebaseAuthError | null>(null);
 
   useEffect(() => {
     void testFirestoreConnection().then((ok) => {
@@ -48,24 +136,44 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => unsub();
   }, []);
 
-  const signInWithGoogle = useCallback(async (): Promise<User | null> => {
-    setAuthBusy(true);
-    setAuthError(null);
-    try {
-      const signedIn = await signInWithGooglePopup();
-      return signedIn;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Google Sign-In failed.';
-      setAuthError(msg);
-      return null;
-    } finally {
-      setAuthBusy(false);
-    }
-  }, []);
+  const signInWithGoogle = useCallback(
+    async (bridgeServerUrl?: string, bridgeServerId?: string): Promise<User | null> => {
+      setAuthBusy(true);
+      setAuthError(null);
+      setAuthErrorInfo(null);
+      try {
+        const normalizedBridgeBase = normalizeServerBaseUrl(bridgeServerUrl ?? '');
+        const resolvedSid = (bridgeServerId ?? getStoredExternalServerId()).trim() || 'cvsu-uci-core-v2';
+
+        if (isCapacitorNativeRuntime() && normalizedBridgeBase) {
+          try {
+            const bridgedUser = await attemptHostedMobileAuthBridge(normalizedBridgeBase, resolvedSid);
+            if (bridgedUser) {
+              return bridgedUser;
+            }
+          } catch {
+            // Fall through to popup attempt if hosted bridge server is unreachable
+          }
+        }
+
+        const signedIn = await signInWithGooglePopup();
+        return signedIn;
+      } catch (err) {
+        const parsed = parseFirebaseAuthError(err);
+        setAuthError(parsed.message);
+        setAuthErrorInfo(parsed);
+        return null;
+      } finally {
+        setAuthBusy(false);
+      }
+    },
+    []
+  );
 
   const signOut = useCallback(async () => {
     setAuthBusy(true);
     setAuthError(null);
+    setAuthErrorInfo(null);
     try {
       await signOutFirebase();
     } catch (err) {
@@ -75,7 +183,10 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
-  const clearAuthError = useCallback(() => setAuthError(null), []);
+  const clearAuthError = useCallback(() => {
+    setAuthError(null);
+    setAuthErrorInfo(null);
+  }, []);
 
   return (
     <FirebaseContext.Provider
@@ -85,6 +196,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         cloudReachable,
         authBusy,
         authError,
+        authErrorInfo,
         signInWithGoogle,
         signOut,
         clearAuthError,

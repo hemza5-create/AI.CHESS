@@ -85,6 +85,9 @@ const SERVER_ROUTES = {
   onlineBootstrap: '/api/v2/online/bootstrap',
   onlineProfile: '/api/v2/online/profile',
   cloudNodes: '/api/v2/cloud/nodes',
+  mobileAuthStart: '/api/v2/auth/mobile-session',
+  mobileAuthComplete: '/api/v2/auth/mobile-session/complete',
+  mobileAuthPoll: '/api/v2/auth/mobile-session/poll',
 } as const;
 
 function sanitizeCloudRegion(raw: unknown, fallback: string): string {
@@ -693,6 +696,23 @@ function getGeminiClient(): GoogleGenAI {
 async function startServer() {
   const app = express();
   const onlineChessHub = new OnlineChessHub(getExpectedServerId);
+  const extraTrustedOrigins = new Set<string>();
+  const addTrustedOrigin = (rawUrl: string | undefined) => {
+    const clean = sanitizePublicCloudUrl(rawUrl);
+    if (!clean) return;
+    try {
+      extraTrustedOrigins.add(new URL(clean).origin);
+    } catch {
+      // ignore invalid origin
+    }
+  };
+  addTrustedOrigin(process.env.APP_URL);
+  addTrustedOrigin(process.env.GCP_CLOUD_ENDPOINT_URL);
+  addTrustedOrigin(process.env.AWS_CLOUD_ENDPOINT_URL);
+  for (const part of (process.env.ALLOWED_CORS_ORIGINS ?? '').split(',')) {
+    addTrustedOrigin(part);
+  }
+
   const isTrustedRequestOrigin = (req: http.IncomingMessage): boolean => {
     const origin = req.headers.origin;
     if (!origin || typeof origin !== 'string') {
@@ -702,13 +722,13 @@ async function startServer() {
     if (origin === 'https://localhost' || origin === 'capacitor://localhost') {
       return true;
     }
-    const appUrl = process.env.APP_URL?.trim().replace(/\/+$/, '');
+    if (extraTrustedOrigins.has(origin)) {
+      return true;
+    }
     const rawHost = req.headers['x-forwarded-host'] || req.headers.host;
     const rawHostStr = Array.isArray(rawHost) ? rawHost[0] : rawHost;
     const host = typeof rawHostStr === 'string' ? rawHostStr.split(',')[0].trim() : '';
-    return Boolean(
-      (appUrl && origin === appUrl) || (host && origin.endsWith(`://${host}`))
-    );
+    return Boolean(host && origin.endsWith(`://${host}`));
   };
 
   app.use((req: Request, res: Response, next: express.NextFunction) => {
@@ -1730,6 +1750,119 @@ async function startServer() {
         },
       ],
     });
+  });
+
+  // Ephemeral single-use Mobile OAuth Bridge (relays Google idToken from authorized browser to Capacitor APK)
+  interface MobileAuthSessionEntry {
+    writeSecret: string;
+    status: 'pending' | 'completed';
+    idToken: string;
+    accessToken: string;
+    expiresAtMs: number;
+  }
+  const mobileAuthSessions = new Map<string, MobileAuthSessionEntry>();
+
+  const pruneExpiredMobileAuthSessions = () => {
+    const now = Date.now();
+    for (const [sid, entry] of mobileAuthSessions.entries()) {
+      if (entry.expiresAtMs <= now) {
+        mobileAuthSessions.delete(sid);
+      }
+    }
+  };
+
+  app.post(SERVER_ROUTES.mobileAuthStart, requireTrustedServerChannel, (_req: Request, res: Response) => {
+    pruneExpiredMobileAuthSessions();
+    if (mobileAuthSessions.size >= 500) {
+      const oldestKey = mobileAuthSessions.keys().next().value;
+      if (oldestKey) mobileAuthSessions.delete(oldestKey);
+    }
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    const writeSecret = crypto.randomBytes(24).toString('hex');
+    mobileAuthSessions.set(sessionId, {
+      writeSecret,
+      status: 'pending',
+      idToken: '',
+      accessToken: '',
+      expiresAtMs: Date.now() + 5 * 60_000,
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ sessionId, writeSecret, expiresInSeconds: 300 });
+  });
+
+  app.post(SERVER_ROUTES.mobileAuthComplete, requireTrustedServerChannel, (req: Request, res: Response) => {
+    pruneExpiredMobileAuthSessions();
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+      sessionId?: unknown;
+      writeSecret?: unknown;
+      idToken?: unknown;
+      accessToken?: unknown;
+    };
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+    const writeSecret = typeof body.writeSecret === 'string' ? body.writeSecret.trim() : '';
+    const idToken = typeof body.idToken === 'string' ? body.idToken.trim() : '';
+    const accessToken = typeof body.accessToken === 'string' ? body.accessToken.trim() : '';
+
+    if (!/^[a-f0-9]{32}$/.test(sessionId) || !/^[a-f0-9]{48}$/.test(writeSecret)) {
+      res.status(400).json({ error: 'Invalid mobile auth session format.' });
+      return;
+    }
+    const entry = mobileAuthSessions.get(sessionId);
+    if (!entry || entry.expiresAtMs <= Date.now()) {
+      mobileAuthSessions.delete(sessionId);
+      res.status(404).json({ error: 'Mobile auth session expired or not found.' });
+      return;
+    }
+    if (!timingSafeEqualString(writeSecret, entry.writeSecret)) {
+      res.status(403).json({ error: 'Invalid mobile auth session secret.' });
+      return;
+    }
+    if ((!idToken || idToken.length > 8192) && (!accessToken || accessToken.length > 4096)) {
+      res.status(400).json({ error: 'Valid Google credential token is required.' });
+      return;
+    }
+    entry.status = 'completed';
+    entry.idToken = idToken;
+    entry.accessToken = accessToken;
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true });
+  });
+
+  app.post(SERVER_ROUTES.mobileAuthPoll, requireTrustedServerChannel, (req: Request, res: Response) => {
+    pruneExpiredMobileAuthSessions();
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+      sessionId?: unknown;
+      writeSecret?: unknown;
+    };
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+    const writeSecret = typeof body.writeSecret === 'string' ? body.writeSecret.trim() : '';
+
+    if (!/^[a-f0-9]{32}$/.test(sessionId) || !/^[a-f0-9]{48}$/.test(writeSecret)) {
+      res.status(400).json({ error: 'Invalid mobile auth session format.' });
+      return;
+    }
+    const entry = mobileAuthSessions.get(sessionId);
+    if (!entry || entry.expiresAtMs <= Date.now()) {
+      mobileAuthSessions.delete(sessionId);
+      res.status(404).json({ error: 'Mobile auth session expired or not found.' });
+      return;
+    }
+    if (!timingSafeEqualString(writeSecret, entry.writeSecret)) {
+      res.status(403).json({ error: 'Invalid mobile auth session secret.' });
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    if (entry.status !== 'completed') {
+      res.json({ status: 'pending' });
+      return;
+    }
+    const payload = {
+      status: 'completed' as const,
+      idToken: entry.idToken,
+      accessToken: entry.accessToken,
+    };
+    mobileAuthSessions.delete(sessionId);
+    res.json(payload);
   });
 
   // Ensure unmatched /api/* routes always return valid JSON (never HTML fallback)

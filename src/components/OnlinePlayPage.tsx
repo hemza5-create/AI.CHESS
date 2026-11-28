@@ -59,8 +59,10 @@ import {
   getConfiguredApiRoutes,
   getServerIdHeaders,
   getStoredMultiCloudConfig,
+  isCapacitorNativeRuntime,
   probeAllMultiCloudNodes,
   safeParseJsonBody,
+  saveExternalServerUrl,
   saveMultiCloudConfig,
   type CloudNodeProbeResult,
   type CloudProviderId,
@@ -99,6 +101,7 @@ import type { OnlineRoomChatMessage } from '../types/onlineChess.ts';
 interface OnlinePlayPageProps {
   externalServerUrl: string;
   externalServerId: string;
+  onUpdateExternalServerUrl?: (nextUrl: string) => string;
   onBackToMain: () => void;
 }
 
@@ -974,6 +977,7 @@ function PlatformIcon({ platform, className = 'w-3.5 h-3.5' }: { platform: Clien
 export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
   externalServerUrl,
   externalServerId,
+  onUpdateExternalServerUrl,
   onBackToMain,
 }) => {
   const { language, meta } = useLanguage();
@@ -984,6 +988,7 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
     cloudReachable,
     authBusy,
     authError,
+    authErrorInfo,
     signInWithGoogle,
     signOut,
     clearAuthError,
@@ -1048,12 +1053,18 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
   const [resolvedMultiCloudUrl, setResolvedMultiCloudUrl] = useState<string>(externalServerUrl);
   const [isProbingClouds, setIsProbingClouds] = useState<boolean>(false);
   const [showMultiCloudEditor, setShowMultiCloudEditor] = useState<boolean>(false);
+  const [primaryUrlDraft, setPrimaryUrlDraft] = useState<string>(externalServerUrl);
   const [gcpUrlDraft, setGcpUrlDraft] = useState<string>(() => getStoredMultiCloudConfig().gcpUrl);
   const [gcpRegionDraft, setGcpRegionDraft] = useState<string>(() => getStoredMultiCloudConfig().gcpRegion);
   const [awsUrlDraft, setAwsUrlDraft] = useState<string>(() => getStoredMultiCloudConfig().awsUrl);
   const [awsRegionDraft, setAwsRegionDraft] = useState<string>(() => getStoredMultiCloudConfig().awsRegion);
   const [cloudNodesSavedToast, setCloudNodesSavedToast] = useState<boolean>(false);
   const [firebaseLatencyMs, setFirebaseLatencyMs] = useState<number | null>(null);
+  const [copiedDomainHint, setCopiedDomainHint] = useState<boolean>(false);
+
+  useEffect(() => {
+    setPrimaryUrlDraft(externalServerUrl);
+  }, [externalServerUrl]);
 
   // Large board warm-up interactive state (usable immediately before entering a room)
   const warmupChessRef = useRef<Chess>(new Chess());
@@ -1547,7 +1558,9 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
       const wsUrl = buildWebSocketUrl('/ws/online-chess', effectiveTransportServerUrl);
       if (!wsUrl) {
         setConnStatus('reconnecting');
-        setErrorBanner(copy.offlineNotice);
+        if (!isCapacitorNativeRuntime()) {
+          setErrorBanner(copy.offlineNotice);
+        }
         return;
       }
 
@@ -2489,7 +2502,7 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
                 onClick={() => {
                   clearAuthError();
                   setErrorBanner(null);
-                  void signInWithGoogle();
+                  void signInWithGoogle(effectiveTransportServerUrl, externalServerId);
                 }}
                 className="inline-flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-60 rounded-lg transition-colors shadow-sm cursor-pointer"
               >
@@ -2617,23 +2630,41 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              const nextPrimary = onUpdateExternalServerUrl
+                ? onUpdateExternalServerUrl(primaryUrlDraft)
+                : saveExternalServerUrl(primaryUrlDraft);
               const updated = saveMultiCloudConfig({
                 gcpUrl: gcpUrlDraft,
                 gcpRegion: gcpRegionDraft,
                 awsUrl: awsUrlDraft,
                 awsRegion: awsRegionDraft,
               });
+              setPrimaryUrlDraft(nextPrimary);
               setMultiCloudConfig(updated);
               setGcpUrlDraft(updated.gcpUrl);
               setGcpRegionDraft(updated.gcpRegion);
               setAwsUrlDraft(updated.awsUrl);
               setAwsRegionDraft(updated.awsRegion);
+              setErrorBanner(null);
               setCloudNodesSavedToast(true);
               globalThis.setTimeout(() => setCloudNodesSavedToast(false), 1800);
               void runMultiCloudProbe(updated);
             }}
             className="pt-2.5 border-t border-slate-800 grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end"
           >
+            <div className="md:col-span-12 space-y-1">
+              <label className="block text-[11px] font-semibold text-slate-300">
+                {copy.multiCloudPrimary} URL ({language === 'ar' ? 'اختياري لتطبيق الهاتف أو الخادم المستقل' : 'Optional for APK / Dedicated Server'})
+              </label>
+              <input
+                type="url"
+                dir="ltr"
+                value={primaryUrlDraft}
+                onChange={(e) => setPrimaryUrlDraft(e.target.value)}
+                placeholder="https://your-cloud-run-or-aws-url.example.com"
+                className="w-full px-2.5 py-1.5 text-xs font-mono text-white bg-slate-950/90 border border-slate-600/70 rounded-md"
+              />
+            </div>
             <div className="md:col-span-4 space-y-1">
               <label className="block text-[11px] font-semibold text-slate-300">
                 {copy.multiCloudGcp} URL
@@ -2694,21 +2725,58 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
       </div>
 
       {errorBanner && (
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-rose-400/60 bg-rose-950/60 text-rose-100 text-xs sm:text-sm">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-rose-300 shrink-0" />
-            <span>{errorBanner}</span>
+        <div className="space-y-2 px-4 py-3 rounded-lg border border-rose-400/60 bg-rose-950/60 text-rose-100 text-xs sm:text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-300 shrink-0" />
+              <span>{errorBanner}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearAuthError();
+                setErrorBanner(null);
+              }}
+              className="text-xs font-bold text-rose-200 hover:text-white px-2 py-0.5"
+            >
+              ✕
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              clearAuthError();
-              setErrorBanner(null);
-            }}
-            className="text-xs font-bold text-rose-200 hover:text-white px-2 py-0.5"
-          >
-            ✕
-          </button>
+
+          {authErrorInfo?.code === 'auth/unauthorized-domain' && (
+            <div className="pt-2 border-t border-rose-400/30 text-[11px] sm:text-xs text-amber-100 space-y-1.5">
+              <p className="font-semibold">
+                {language === 'ar'
+                  ? `النطاق الحالي (${authErrorInfo.hostname}) غير مضاف ضمن النطاقات المصرّح بها في Firebase Auth:`
+                  : `Current domain (${authErrorInfo.hostname}) is not in Firebase Auth Authorized Domains:`}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code dir="ltr" className="px-2 py-0.5 rounded bg-slate-950/80 border border-slate-700 font-mono text-cyan-200">
+                  {authErrorInfo.hostname}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(authErrorInfo.hostname);
+                    setCopiedDomainHint(true);
+                    globalThis.setTimeout(() => setCopiedDomainHint(false), 1500);
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-600 cursor-pointer"
+                >
+                  {copiedDomainHint ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                  <span>{language === 'ar' ? 'نسخ النطاق' : 'Copy domain'}</span>
+                </button>
+              </div>
+              <p className="text-slate-200">
+                {language === 'ar'
+                  ? 'أضف هذا النطاق في Firebase Console ← Authentication ← Settings ← Authorized domains، أو أدخل رابط خادم Cloud Run / AWS المنشور في "إعداد العقد" أعلاه لتفعيل تسجيل الدخول عبر متصفح Chrome تلقائياً.'
+                  : 'Add this domain in Firebase Console → Authentication → Settings → Authorized domains, or enter your deployed Cloud Run / AWS URL in "Cloud Nodes" above to sign in via the system browser bridge.'}
+              </p>
+              <p dir="ltr" className="font-mono text-[10px] text-cyan-200 break-all">
+                {authErrorInfo.consoleUrl}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

@@ -319,6 +319,9 @@ export function getConfiguredApiRoutes() {
     onlineBootstrap: '/api/v2/online/bootstrap',
     onlineProfile: '/api/v2/online/profile',
     cloudNodes: '/api/v2/cloud/nodes',
+    mobileAuthStart: '/api/v2/auth/mobile-session',
+    mobileAuthComplete: '/api/v2/auth/mobile-session/complete',
+    mobileAuthPoll: '/api/v2/auth/mobile-session/poll',
   } as const;
 }
 
@@ -757,7 +760,7 @@ export async function probeCloudNode(
       id,
       url: normalizedUrl,
       region,
-      configured: id === 'primary',
+      configured: id === 'primary' ? !isCapacitorNativeRuntime() : false,
       reachable: false,
       latencyMs: null,
     };

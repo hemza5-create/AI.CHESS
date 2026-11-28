@@ -19,6 +19,7 @@ import {
 } from './components/PuzzlesTab.tsx';
 import { SecurityKeyVaultTab } from './components/SecurityKeyVaultTab.tsx';
 import { OnlinePlayPage } from './components/OnlinePlayPage.tsx';
+import { MobileAuthBridge } from './components/MobileAuthBridge.tsx';
 import { DeveloperPortalModal } from './components/DeveloperPortalModal.tsx';
 import { LanguageSwitcher } from './components/LanguageSwitcher.tsx';
 import { saveStoredLanguage, useLanguage } from './i18n/LanguageContext.tsx';
@@ -102,6 +103,22 @@ async function parseJsonResponse<T>(
 
 export default function App() {
   const { language, meta, t } = useLanguage();
+
+  const mobileAuthParams =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const mobileAuthSession = mobileAuthParams?.get('mobileAuthSession')?.trim() ?? '';
+  const mobileAuthSecret = mobileAuthParams?.get('s')?.trim() ?? '';
+  const mobileAuthServerId = mobileAuthParams?.get('sid')?.trim() ?? '';
+  if (mobileAuthSession && mobileAuthSecret) {
+    return (
+      <MobileAuthBridge
+        sessionId={mobileAuthSession}
+        writeSecret={mobileAuthSecret}
+        serverIdParam={mobileAuthServerId}
+      />
+    );
+  }
+
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'analyzer' | 'coach' | 'puzzles' | 'keyVault' | 'online'>('analyzer');
   const [source, setSource] = useState<CaptureSource>('virtual');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -1551,6 +1568,11 @@ export default function App() {
           <OnlinePlayPage
             externalServerUrl={externalServerUrl}
             externalServerId={externalServerId}
+            onUpdateExternalServerUrl={(nextUrl) => {
+              const saved = saveExternalServerUrl(nextUrl);
+              setExternalServerUrl(saved);
+              return saved;
+            }}
             onBackToMain={() => setActiveWorkspaceTab('analyzer')}
           />
         )}

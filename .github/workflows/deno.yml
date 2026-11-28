@@ -41,6 +41,10 @@ jobs:
           VITE_API_ROUTE_ENGINE_HEALTH: ${{ vars.VITE_API_ROUTE_ENGINE_HEALTH || '/api/v2/engine/health' }}
           VITE_API_ROUTE_ENGINE_VERSION: ${{ vars.VITE_API_ROUTE_ENGINE_VERSION || '/api/v2/engine/version' }}
           VITE_API_ROUTE_ENGINE_AUTO_UPDATE: ${{ vars.VITE_API_ROUTE_ENGINE_AUTO_UPDATE || '/api/v2/engine/auto-update' }}
+          VITE_GCP_CLOUD_URL: ${{ vars.VITE_GCP_CLOUD_URL }}
+          VITE_GCP_CLOUD_REGION: ${{ vars.VITE_GCP_CLOUD_REGION || 'europe-west2' }}
+          VITE_AWS_CLOUD_URL: ${{ vars.VITE_AWS_CLOUD_URL }}
+          VITE_AWS_CLOUD_REGION: ${{ vars.VITE_AWS_CLOUD_REGION || 'eu-west-1' }}
         run: npm run build
 
       - name: Install Capacitor CLI and Core
