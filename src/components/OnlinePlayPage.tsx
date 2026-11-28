@@ -22,12 +22,15 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  Server,
+  Settings2,
   ShieldAlert,
   Smartphone,
   Swords,
   Trophy,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import { TacticalBoard } from './TacticalBoard.tsx';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
@@ -52,12 +55,20 @@ import {
   buildApiUrl,
   buildWebSocketUrl,
   detectClientPlatform,
+  fetchServerCloudNodes,
   getConfiguredApiRoutes,
   getServerIdHeaders,
+  getStoredMultiCloudConfig,
+  probeAllMultiCloudNodes,
   safeParseJsonBody,
+  saveMultiCloudConfig,
+  type CloudNodeProbeResult,
+  type CloudProviderId,
+  type CloudRoutingMode,
+  type MultiCloudConfig,
 } from '../utils/networkAndServer.ts';
 import { useFirebase } from '../firebase/FirebaseContext.tsx';
-import { FIREBASE_PROJECT_ID } from '../firebase/firebaseApp.ts';
+import { FIREBASE_PROJECT_ID, testFirestoreConnection } from '../firebase/firebaseApp.ts';
 import {
   cancelCloudQueueSearch,
   claimQueueCandidateAtomically,
@@ -65,6 +76,8 @@ import {
   createCloudRoom,
   deleteWaitingCloudMatch,
   ensureCloudRankingProfile,
+  findBestCloudQueueCandidate,
+  findBestWaitingCloudRoom,
   joinCloudRoomByIdOrCode,
   mapMatchDocToRoomState,
   offerOrRespondCloudDraw,
@@ -77,6 +90,7 @@ import {
   subscribeCloudMatchChat,
   subscribeCloudPublicMatches,
   subscribeCloudQueue,
+  touchCloudQueueTicket,
   type CloudQueueTicket,
   type FirestoreMatchDoc,
 } from '../firebase/cloudMatchmakingService.ts';
@@ -114,6 +128,8 @@ interface OnlineCopy {
   startAutoSearch: string;
   cancelAutoSearch: string;
   searchingStatus: string;
+  searchingWidening: string;
+  searchingNoHumanHint: string;
   searchTargetPlatform: string;
   searchTargetCountry: string;
   allPlatforms: string;
@@ -204,6 +220,22 @@ interface OnlineCopy {
   cloudModePromptDesc: string;
   cloudQuotaError: string;
   cloudRoomNotFound: string;
+  cloudSyncBtn: string;
+  cloudSyncedLabel: string;
+  multiCloudTitle: string;
+  multiCloudProbeBtn: string;
+  multiCloudProbing: string;
+  multiCloudConfigBtn: string;
+  multiCloudRoutingLabel: string;
+  multiCloudAuto: string;
+  multiCloudPrimary: string;
+  multiCloudGcp: string;
+  multiCloudAws: string;
+  multiCloudSaveNodes: string;
+  multiCloudSaved: string;
+  multiCloudNotConfigured: string;
+  multiCloudOnline: string;
+  multiCloudUnreachable: string;
   endReasons: Record<OnlineGameEndReason, string>;
 }
 
@@ -222,6 +254,8 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     startAutoSearch: 'بدء البحث التلقائي عن خصم حقيقي',
     cancelAutoSearch: 'إلغاء البحث',
     searchingStatus: 'جاري البحث التلقائي عن لاعب حقيقي...',
+    searchingWidening: 'جاري توسيع نطاق البحث ليشمل جميع المنصات والدول والأزمنة...',
+    searchingNoHumanHint: 'لا يوجد لاعب حقيقي متاح في الطابور حالياً. يستمر البحث تلقائياً فور دخول منافس، أو أنشئ غرفة وشارك رمزها.',
     searchTargetPlatform: 'منصة المنافس',
     searchTargetCountry: 'دولة المنافس',
     allPlatforms: 'جميع المنصات',
@@ -312,6 +346,22 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     cloudModePromptDesc: 'سجّل بحساب Google للانتقال إلى طوابير البحث العالمية على خادم Firebase واللعب عبر مختلف الأجهزة والمنصات.',
     cloudQuotaError: 'تم الوصول للحد اليومي لقاعدة البيانات السحابية مؤقتاً. يرجى المحاولة لاحقاً.',
     cloudRoomNotFound: 'لم يتم العثور على الغرفة السحابية أو أنها لم تعد متاحة.',
+    cloudSyncBtn: 'تحديث المزامنة',
+    cloudSyncedLabel: 'تمت المزامنة',
+    multiCloudTitle: 'البنية السحابية المتعددة (Google Cloud و Amazon AWS)',
+    multiCloudProbeBtn: 'فحص وتحسين الاتصال',
+    multiCloudProbing: 'جاري الفحص...',
+    multiCloudConfigBtn: 'إعداد العقد',
+    multiCloudRoutingLabel: 'التوجيه',
+    multiCloudAuto: 'تلقائي (الأسرع)',
+    multiCloudPrimary: 'العقدة الرئيسية',
+    multiCloudGcp: 'Google Cloud',
+    multiCloudAws: 'Amazon AWS',
+    multiCloudSaveNodes: 'حفظ روابط السحابة',
+    multiCloudSaved: 'تم الحفظ',
+    multiCloudNotConfigured: 'غير مضبوط',
+    multiCloudOnline: 'متصل',
+    multiCloudUnreachable: 'غير متاح',
     endReasons: {
       checkmate: 'كش مات',
       stalemate: 'طريق مسدود (تعادل)',
@@ -338,6 +388,8 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     startAutoSearch: 'Start Auto Search for Real Player',
     cancelAutoSearch: 'Cancel Search',
     searchingStatus: 'Searching for real opponent across platforms...',
+    searchingWidening: 'Widening search across all platforms, countries, and time controls...',
+    searchingNoHumanHint: 'No real human opponent is in queue right now. Matching continues automatically when someone joins, or create a room and share its code.',
     searchTargetPlatform: 'Target Platform',
     searchTargetCountry: 'Target Country',
     allPlatforms: 'All Platforms',
@@ -428,6 +480,22 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     cloudModePromptDesc: 'Sign in with Google to switch to global Firebase Cloud matchmaking across devices and platforms.',
     cloudQuotaError: 'Cloud database quota temporarily exceeded. Please try again later.',
     cloudRoomNotFound: 'Cloud room not found or no longer available.',
+    cloudSyncBtn: 'Sync Now',
+    cloudSyncedLabel: 'Synced',
+    multiCloudTitle: 'Multi-Cloud Infrastructure (Google Cloud & Amazon AWS)',
+    multiCloudProbeBtn: 'Optimize & Probe',
+    multiCloudProbing: 'Probing...',
+    multiCloudConfigBtn: 'Cloud Nodes',
+    multiCloudRoutingLabel: 'Routing',
+    multiCloudAuto: 'Auto (Fastest)',
+    multiCloudPrimary: 'Primary Node',
+    multiCloudGcp: 'Google Cloud',
+    multiCloudAws: 'Amazon AWS',
+    multiCloudSaveNodes: 'Save Cloud Nodes',
+    multiCloudSaved: 'Saved',
+    multiCloudNotConfigured: 'Not configured',
+    multiCloudOnline: 'Online',
+    multiCloudUnreachable: 'Unreachable',
     endReasons: {
       checkmate: 'Checkmate',
       stalemate: 'Stalemate',
@@ -454,6 +522,8 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     startAutoSearch: 'Lancer la Recherche Auto',
     cancelAutoSearch: 'Annuler la Recherche',
     searchingStatus: 'Recherche d’un adversaire réel...',
+    searchingWidening: 'Élargissement de la recherche à toutes les plateformes, pays et cadences...',
+    searchingNoHumanHint: 'Aucun adversaire réel en file pour le moment. La recherche continue automatiquement ou créez un salon à partager.',
     searchTargetPlatform: 'Plateforme cible',
     searchTargetCountry: 'Pays cible',
     allPlatforms: 'Toutes plateformes',
@@ -544,6 +614,22 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     cloudModePromptDesc: 'Connectez-vous avec Google pour activer le matchmaking mondial Firebase multiplateforme.',
     cloudQuotaError: 'Quota cloud temporairement dépassé. Réessayez plus tard.',
     cloudRoomNotFound: 'Salon cloud introuvable ou indisponible.',
+    cloudSyncBtn: 'Synchroniser',
+    cloudSyncedLabel: 'Synchronisé',
+    multiCloudTitle: 'Infrastructure Multi-Cloud (Google Cloud & Amazon AWS)',
+    multiCloudProbeBtn: 'Optimiser & Tester',
+    multiCloudProbing: 'Test...',
+    multiCloudConfigBtn: 'Nœuds Cloud',
+    multiCloudRoutingLabel: 'Routage',
+    multiCloudAuto: 'Auto (Plus rapide)',
+    multiCloudPrimary: 'Nœud Principal',
+    multiCloudGcp: 'Google Cloud',
+    multiCloudAws: 'Amazon AWS',
+    multiCloudSaveNodes: 'Enregistrer les nœuds',
+    multiCloudSaved: 'Enregistré',
+    multiCloudNotConfigured: 'Non configuré',
+    multiCloudOnline: 'En ligne',
+    multiCloudUnreachable: 'Injoignable',
     endReasons: {
       checkmate: 'Échec et mat',
       stalemate: 'Pat',
@@ -570,6 +656,8 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     startAutoSearch: 'Начать Автопоиск Соперника',
     cancelAutoSearch: 'Отменить Поиск',
     searchingStatus: 'Поиск реального игрока на всех платформах...',
+    searchingWidening: 'Расширение поиска на все платформы, страны и контроли времени...',
+    searchingNoHumanHint: 'Сейчас в очереди нет реальных соперников. Поиск продолжится автоматически или создайте комнату с кодом.',
     searchTargetPlatform: 'Платформа соперника',
     searchTargetCountry: 'Страна соперника',
     allPlatforms: 'Все платформы',
@@ -660,6 +748,22 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     cloudModePromptDesc: 'Войдите через Google, чтобы подключиться к глобальной очереди Firebase на разных устройствах.',
     cloudQuotaError: 'Временно превышена квота облачной базы данных.',
     cloudRoomNotFound: 'Облачная комната не найдена.',
+    cloudSyncBtn: 'Обновить синхронизацию',
+    cloudSyncedLabel: 'Синхронизировано',
+    multiCloudTitle: 'Мультиоблачная инфраструктура (Google Cloud и Amazon AWS)',
+    multiCloudProbeBtn: 'Проверить и ускорить',
+    multiCloudProbing: 'Проверка...',
+    multiCloudConfigBtn: 'Узлы облака',
+    multiCloudRoutingLabel: 'Маршрут',
+    multiCloudAuto: 'Авто (быстрейший)',
+    multiCloudPrimary: 'Основной узел',
+    multiCloudGcp: 'Google Cloud',
+    multiCloudAws: 'Amazon AWS',
+    multiCloudSaveNodes: 'Сохранить узлы',
+    multiCloudSaved: 'Сохранено',
+    multiCloudNotConfigured: 'Не задано',
+    multiCloudOnline: 'В сети',
+    multiCloudUnreachable: 'Недоступен',
     endReasons: {
       checkmate: 'Мат',
       stalemate: 'Пат',
@@ -686,6 +790,8 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     startAutoSearch: '开始自动搜索真实对手',
     cancelAutoSearch: '取消搜索',
     searchingStatus: '正在跨平台搜索真实对手...',
+    searchingWidening: '正在扩大匹配范围至所有平台、国家和用时规则...',
+    searchingNoHumanHint: '当前队列中暂无真实对手。新玩家加入后将自动匹配，您也可以创建房间并分享房间码。',
     searchTargetPlatform: '目标平台',
     searchTargetCountry: '目标国家',
     allPlatforms: '所有平台',
@@ -776,6 +882,22 @@ const COPY_BY_LANG: Record<SupportedLanguage, OnlineCopy> = {
     cloudModePromptDesc: '登录 Google 账号以连接全球 Firebase 云匹配服务，实现跨设备跨平台实时对战。',
     cloudQuotaError: '云端数据库配额暂时超出，请稍后再试。',
     cloudRoomNotFound: '未找到该云端房间或已关闭。',
+    cloudSyncBtn: '立即同步',
+    cloudSyncedLabel: '已同步',
+    multiCloudTitle: '多云基础设施（Google Cloud 与 Amazon AWS）',
+    multiCloudProbeBtn: '探测并优化连接',
+    multiCloudProbing: '探测中...',
+    multiCloudConfigBtn: '云节点设置',
+    multiCloudRoutingLabel: '路由',
+    multiCloudAuto: '自动（最低延迟）',
+    multiCloudPrimary: '主节点',
+    multiCloudGcp: 'Google Cloud',
+    multiCloudAws: 'Amazon AWS',
+    multiCloudSaveNodes: '保存云节点',
+    multiCloudSaved: '已保存',
+    multiCloudNotConfigured: '未配置',
+    multiCloudOnline: '在线',
+    multiCloudUnreachable: '不可达',
     endReasons: {
       checkmate: '将杀',
       stalemate: '逼和',
@@ -909,8 +1031,29 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
   const [activeCloudMatchDoc, setActiveCloudMatchDoc] = useState<FirestoreMatchDoc | null>(null);
   const [cloudChat, setCloudChat] = useState<OnlineRoomChatMessage[]>([]);
   const [cloudSearchStartedAt, setCloudSearchStartedAt] = useState<number | null>(null);
+  const [cloudMatchSweepTick, setCloudMatchSweepTick] = useState<number>(0);
+  const [cloudSyncNonce, setCloudSyncNonce] = useState<number>(0);
+  const [cloudSyncBusy, setCloudSyncBusy] = useState<boolean>(false);
+  const [cloudSyncedToast, setCloudSyncedToast] = useState<boolean>(false);
   const claimingQueueRef = useRef<boolean>(false);
+  const isCloudSearchingRef = useRef<boolean>(false);
   const committedRatingMatchIdsRef = useRef<Set<string>>(new Set());
+
+  // Multi-Cloud (Google Cloud + Amazon AWS) routing & latency optimization
+  const [multiCloudConfig, setMultiCloudConfig] = useState<MultiCloudConfig>(() =>
+    getStoredMultiCloudConfig()
+  );
+  const [cloudNodeProbes, setCloudNodeProbes] = useState<CloudNodeProbeResult[]>([]);
+  const [activeMultiCloudNode, setActiveMultiCloudNode] = useState<CloudProviderId>('primary');
+  const [resolvedMultiCloudUrl, setResolvedMultiCloudUrl] = useState<string>(externalServerUrl);
+  const [isProbingClouds, setIsProbingClouds] = useState<boolean>(false);
+  const [showMultiCloudEditor, setShowMultiCloudEditor] = useState<boolean>(false);
+  const [gcpUrlDraft, setGcpUrlDraft] = useState<string>(() => getStoredMultiCloudConfig().gcpUrl);
+  const [gcpRegionDraft, setGcpRegionDraft] = useState<string>(() => getStoredMultiCloudConfig().gcpRegion);
+  const [awsUrlDraft, setAwsUrlDraft] = useState<string>(() => getStoredMultiCloudConfig().awsUrl);
+  const [awsRegionDraft, setAwsRegionDraft] = useState<string>(() => getStoredMultiCloudConfig().awsRegion);
+  const [cloudNodesSavedToast, setCloudNodesSavedToast] = useState<boolean>(false);
+  const [firebaseLatencyMs, setFirebaseLatencyMs] = useState<number | null>(null);
 
   // Large board warm-up interactive state (usable immediately before entering a room)
   const warmupChessRef = useRef<Chess>(new Chess());
@@ -1051,19 +1194,45 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
       unsubQueue();
       unsubMatches();
     };
-  }, [cloudReachable, formatCloudError, isCloudMode, user]);
+  }, [cloudReachable, cloudSyncNonce, formatCloudError, isCloudMode, user]);
 
-  // React to Cloud matchmakingQueue snapshots: detect opponent match or pair compatible seekers
+  const handleManualCloudSync = useCallback(async () => {
+    if (!isCloudMode || !user) return;
+    setCloudSyncBusy(true);
+    setErrorBanner(null);
+    try {
+      const ok = await testFirestoreConnection();
+      setConnStatus(ok ? 'connected' : 'reconnecting');
+      const profile = await ensureCloudRankingProfile(
+        user,
+        profileDraftRef.current.name,
+        profileDraftRef.current.country,
+        profileDraftRef.current.platform
+      );
+      setCloudSelfProfile(profile);
+      setCloudSyncNonce((n) => n + 1);
+      setCloudSyncedToast(true);
+      globalThis.setTimeout(() => setCloudSyncedToast(false), 1800);
+    } catch (err) {
+      setErrorBanner(formatCloudError(err));
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  }, [formatCloudError, isCloudMode, user]);
+
+  // React to Cloud matchmakingQueue & open public rooms: detect opponent match, resolve tie-breakers, and auto-pair
   useEffect(() => {
-    if (!isCloudMode || !user || !cloudSelfProfile) return;
+    if (!isCloudMode || !user) return;
 
     const myTicket = cloudQueueTickets.find((t) => t.uid === user.uid);
     if (!myTicket) {
+      isCloudSearchingRef.current = false;
       setCloudSearchStartedAt(null);
       return;
     }
 
     if (myTicket.status === 'matched' && myTicket.matchedMatchId) {
+      isCloudSearchingRef.current = false;
       setActiveCloudMatchId(myTicket.matchedMatchId);
       setConfirmingResign(false);
       setViewTab('arena');
@@ -1072,47 +1241,143 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
       return;
     }
 
+    if (activeCloudMatchId) {
+      isCloudSearchingRef.current = false;
+      void cancelCloudQueueSearch(user.uid).catch(() => undefined);
+      return;
+    }
+
     if (myTicket.status === 'searching') {
-      setCloudSearchStartedAt((prev) => prev ?? myTicket.updatedAtMs ?? Date.now());
+      isCloudSearchingRef.current = true;
+      const startedAt = cloudSearchStartedAt ?? myTicket.updatedAtMs ?? Date.now();
+      if (cloudSearchStartedAt === null) {
+        setCloudSearchStartedAt(startedAt);
+      }
       if (claimingQueueRef.current) return;
 
-      const now = Date.now();
-      const candidate = cloudQueueTickets.find((cand) => {
-        if (cand.uid === user.uid || cand.status !== 'searching') return false;
-        if (now - cand.updatedAtMs > 10 * 60_000) return false;
-        if (cand.timeControlId !== myTicket.timeControlId) return false;
-        const selfAllowsCandPlat =
-          myTicket.targetPlatform === 'all' || myTicket.targetPlatform === cand.platform;
-        const candAllowsSelfPlat =
-          cand.targetPlatform === 'all' || cand.targetPlatform === myTicket.platform;
-        if (!selfAllowsCandPlat || !candAllowsSelfPlat) return false;
-        const selfAllowsCandCountry =
-          myTicket.targetCountry === 'ALL' || myTicket.targetCountry === cand.country;
-        const candAllowsSelfCountry =
-          cand.targetCountry === 'ALL' || cand.targetCountry === myTicket.country;
-        if (!selfAllowsCandCountry || !candAllowsSelfCountry) return false;
-        // Deterministic tie-breaker so only one client executes batch write
-        return user.uid > cand.uid;
-      });
+      const elapsedWaitMs = Math.max(0, Date.now() - startedAt);
+      const effectiveProfile: OnlinePlayerProfile = cloudSelfProfile ?? {
+        playerId: user.uid,
+        name: profileDraftRef.current.name || user.displayName || 'Player',
+        country: profileDraftRef.current.country,
+        platform: profileDraftRef.current.platform,
+        elo: 1200,
+        bestElo: 1200,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        gamesPlayed: 0,
+        streak: 0,
+        updatedAt: Date.now(),
+      };
 
-      if (candidate) {
+      const candidate = findBestCloudQueueCandidate(
+        user.uid,
+        effectiveProfile.country,
+        effectiveProfile.platform,
+        effectiveProfile.elo,
+        myTicket.timeControlId,
+        myTicket.targetPlatform,
+        myTicket.targetCountry,
+        cloudQueueTickets,
+        elapsedWaitMs
+      );
+
+      // Use deterministic uid tie-breaker only for first 4s to reduce simultaneous claim races;
+      // after 4s any active client may claim so a throttled/reconnecting peer never deadlocks the queue.
+      if (candidate && (user.uid > candidate.uid || elapsedWaitMs >= 4000)) {
         claimingQueueRef.current = true;
-        void claimQueueCandidateAtomically(cloudSelfProfile, candidate)
+        void claimQueueCandidateAtomically(effectiveProfile, candidate)
           .then((matchId) => {
+            isCloudSearchingRef.current = false;
             setActiveCloudMatchId(matchId);
             setConfirmingResign(false);
             setViewTab('arena');
             setCloudSearchStartedAt(null);
           })
           .catch(() => {
-            // Peer may have already claimed or left queue
+            // Peer may have already claimed or left queue; next sweep/snapshot will resolve
+          })
+          .finally(() => {
+            claimingQueueRef.current = false;
+          });
+        return;
+      }
+
+      // Also check open public waiting rooms created after the seeker entered the queue
+      const waitingRoom = findBestWaitingCloudRoom(
+        user.uid,
+        myTicket.timeControlId,
+        myTicket.targetPlatform,
+        myTicket.targetCountry,
+        cloudRooms,
+        elapsedWaitMs
+      );
+
+      if (waitingRoom) {
+        claimingQueueRef.current = true;
+        void joinCloudRoomByIdOrCode(waitingRoom.roomId, effectiveProfile, false)
+          .then((joinedId) => {
+            if (joinedId) {
+              isCloudSearchingRef.current = false;
+              setActiveCloudMatchId(joinedId);
+              setConfirmingResign(false);
+              setViewTab('arena');
+              setCloudSearchStartedAt(null);
+              void cancelCloudQueueSearch(user.uid).catch(() => undefined);
+            }
+          })
+          .catch(() => {
+            // Room may have been filled by another player; next sweep/snapshot will resolve
           })
           .finally(() => {
             claimingQueueRef.current = false;
           });
       }
     }
-  }, [cloudQueueTickets, cloudSelfProfile, isCloudMode, user]);
+  }, [
+    activeCloudMatchId,
+    cloudMatchSweepTick,
+    cloudQueueTickets,
+    cloudRooms,
+    cloudSearchStartedAt,
+    cloudSelfProfile,
+    isCloudMode,
+    user,
+  ]);
+
+  // Periodic sweep (3s) to break tie-breaker deadlocks & progressively widen filters, plus 20s heartbeat
+  useEffect(() => {
+    const mySearching =
+      isCloudMode &&
+      Boolean(user) &&
+      !activeCloudMatchId &&
+      cloudQueueTickets.some((t) => t.uid === user?.uid && t.status === 'searching');
+
+    if (!mySearching || !user) return;
+
+    const sweepId = globalThis.setInterval(() => {
+      setCloudMatchSweepTick((n) => n + 1);
+    }, 3000);
+
+    const heartbeatId = globalThis.setInterval(() => {
+      void touchCloudQueueTicket(user.uid).catch(() => undefined);
+    }, 20_000);
+
+    return () => {
+      globalThis.clearInterval(sweepId);
+      globalThis.clearInterval(heartbeatId);
+    };
+  }, [activeCloudMatchId, cloudQueueTickets, isCloudMode, user]);
+
+  // Clean up own Cloud queue ticket on unmount if leaving while searching
+  useEffect(() => {
+    return () => {
+      if (isCloudMode && user && isCloudSearchingRef.current) {
+        void cancelCloudQueueSearch(user.uid).catch(() => undefined);
+      }
+    };
+  }, [isCloudMode, user]);
 
   // Active Cloud Match listener
   useEffect(() => {
@@ -1170,12 +1435,70 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
     });
   }, [activeCloudMatchDoc, formatCloudError, isCloudMode, user]);
 
+  const multiCloudConfigRef = useRef<MultiCloudConfig>(multiCloudConfig);
+  useEffect(() => {
+    multiCloudConfigRef.current = multiCloudConfig;
+  }, [multiCloudConfig]);
+
+  const runMultiCloudProbe = useCallback(
+    async (overrideConfig?: MultiCloudConfig) => {
+      const cfg = overrideConfig ?? multiCloudConfigRef.current;
+      setIsProbingClouds(true);
+      try {
+        const fbStart = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const [probeOutcome, fbOk] = await Promise.all([
+          probeAllMultiCloudNodes(cfg, externalServerUrl, externalServerId),
+          testFirestoreConnection().catch(() => false),
+        ]);
+        const fbEnd = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        setFirebaseLatencyMs(fbOk ? Math.max(1, Math.round(fbEnd - fbStart)) : null);
+        setCloudNodeProbes(probeOutcome.probes);
+        setActiveMultiCloudNode(probeOutcome.activeNodeId);
+        setResolvedMultiCloudUrl(probeOutcome.optimalUrl);
+      } finally {
+        setIsProbingClouds(false);
+      }
+    },
+    [externalServerId, externalServerUrl]
+  );
+
+  // Hydrate server-side Google Cloud & Amazon AWS endpoints and run initial multi-cloud RTT probe
+  useEffect(() => {
+    let cancelled = false;
+    const initMultiCloud = async () => {
+      const serverNodes = await fetchServerCloudNodes(externalServerUrl, externalServerId);
+      let activeCfg = getStoredMultiCloudConfig();
+      if (!cancelled && serverNodes) {
+        activeCfg = saveMultiCloudConfig({
+          gcpUrl: activeCfg.gcpUrl || serverNodes.gcpUrl,
+          gcpRegion: activeCfg.gcpRegion || serverNodes.gcpRegion,
+          awsUrl: activeCfg.awsUrl || serverNodes.awsUrl,
+          awsRegion: activeCfg.awsRegion || serverNodes.awsRegion,
+        });
+        setMultiCloudConfig(activeCfg);
+        setGcpUrlDraft(activeCfg.gcpUrl);
+        setGcpRegionDraft(activeCfg.gcpRegion);
+        setAwsUrlDraft(activeCfg.awsUrl);
+        setAwsRegionDraft(activeCfg.awsRegion);
+      }
+      if (!cancelled) {
+        await runMultiCloudProbe(activeCfg);
+      }
+    };
+    void initMultiCloud();
+    return () => {
+      cancelled = true;
+    };
+  }, [externalServerId, externalServerUrl, runMultiCloudProbe]);
+
+  const effectiveTransportServerUrl = resolvedMultiCloudUrl || externalServerUrl;
+
   // Initial HTTP bootstrap hydration (when not in Cloud mode)
   useEffect(() => {
     if (isCloudMode) return;
     let cancelled = false;
     const bootstrap = async () => {
-      const url = buildApiUrl(getConfiguredApiRoutes().onlineBootstrap, externalServerUrl);
+      const url = buildApiUrl(getConfiguredApiRoutes().onlineBootstrap, effectiveTransportServerUrl);
       if (!url) return;
       try {
         const res = await fetch(url, {
@@ -1209,7 +1532,7 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [externalServerId, externalServerUrl, isCloudMode]);
+  }, [effectiveTransportServerUrl, externalServerId, isCloudMode]);
 
   // Real-time WebSocket lifecycle fallback when not signed into Firebase Cloud
   useEffect(() => {
@@ -1217,10 +1540,11 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
     let disposed = false;
     let reconnectTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
     let backoffMs = 900;
+    let consecutiveFailures = 0;
 
     const connectSocket = () => {
       if (disposed) return;
-      const wsUrl = buildWebSocketUrl('/ws/online-chess', externalServerUrl);
+      const wsUrl = buildWebSocketUrl('/ws/online-chess', effectiveTransportServerUrl);
       if (!wsUrl) {
         setConnStatus('reconnecting');
         setErrorBanner(copy.offlineNotice);
@@ -1246,6 +1570,7 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
           return;
         }
         backoffMs = 900;
+        consecutiveFailures = 0;
         const helloMsg: OnlineWsClientMessage = {
           type: 'hello',
           serverId: externalServerId,
@@ -1325,6 +1650,10 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
         }
         if (disposed) return;
         setConnStatus('reconnecting');
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 2 && resolvedMultiCloudUrl) {
+          void runMultiCloudProbe();
+        }
         const delay = backoffMs;
         backoffMs = Math.min(8000, Math.round(backoffMs * 1.6));
         reconnectTimer = globalThis.setTimeout(connectSocket, delay);
@@ -1346,7 +1675,7 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
         sock.close();
       }
     };
-  }, [copy.offlineNotice, externalServerId, externalServerUrl, isCloudMode, playerId, reconnectAttempt]);
+  }, [copy.offlineNotice, effectiveTransportServerUrl, externalServerId, isCloudMode, playerId, reconnectAttempt, resolvedMultiCloudUrl, runMultiCloudProbe]);
 
   // Unified effective state (Firebase Cloud vs WebSocket fallback)
   const activePlayerId = isCloudMode && user ? user.uid : playerId;
@@ -1489,7 +1818,7 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
         platform: clientPlatform,
       })
     ) {
-      const profileUrl = buildApiUrl(getConfiguredApiRoutes().onlineProfile, externalServerUrl);
+      const profileUrl = buildApiUrl(getConfiguredApiRoutes().onlineProfile, effectiveTransportServerUrl);
       if (profileUrl) {
         try {
           const res = await fetch(profileUrl, {
@@ -1667,7 +1996,7 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
         activeCloudMatchDoc.status === 'waiting' &&
         activeCloudMatchDoc.createdByUid === user.uid
       ) {
-        await deleteWaitingCloudMatch(activeCloudMatchDoc.matchId).catch(() => undefined);
+        await deleteWaitingCloudMatch(activeCloudMatchDoc.matchId, activeCloudMatchDoc.code).catch(() => undefined);
       }
       setActiveCloudMatchId(null);
       setActiveCloudMatchDoc(null);
@@ -2103,58 +2432,265 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
         </div>
       </div>
 
-      {/* Firebase Global Cloud Connection Bar (Cross-Platform Multi-Device Sync) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl border border-cyan-400/35 bg-slate-900/75 backdrop-blur-sm">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Cloud className={`w-5 h-5 shrink-0 ${isCloudMode ? 'text-emerald-300' : 'text-cyan-300'}`} />
-          <div className="min-w-0">
-            <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2 flex-wrap">
-              <span>{isCloudMode ? copy.cloudConnectedLabel : copy.cloudSignInBtn}</span>
-              <span
-                dir="ltr"
-                className="px-1.5 py-0.5 text-[10px] font-mono bg-slate-800 text-cyan-200 border border-slate-600/60 rounded"
-              >
-                {FIREBASE_PROJECT_ID}
-              </span>
+      {/* Multi-Cloud Global Infrastructure Bar (Firebase + Google Cloud + Amazon AWS) */}
+      <div className="px-4 py-3 rounded-xl border border-cyan-400/35 bg-slate-900/75 backdrop-blur-sm space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Cloud className={`w-5 h-5 shrink-0 ${isCloudMode ? 'text-emerald-300' : 'text-cyan-300'}`} />
+            <div className="min-w-0">
+              <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                <span>{isCloudMode ? copy.cloudConnectedLabel : copy.cloudSignInBtn}</span>
+                <span
+                  dir="ltr"
+                  className="px-1.5 py-0.5 text-[10px] font-mono bg-slate-800 text-cyan-200 border border-slate-600/60 rounded"
+                >
+                  {FIREBASE_PROJECT_ID}
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">
+                {isCloudMode ? copy.cloudModeActiveDesc : copy.cloudModePromptDesc}
+              </p>
             </div>
-            <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">
-              {isCloudMode ? copy.cloudModeActiveDesc : copy.cloudModePromptDesc}
-            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {isCloudMode && user ? (
+              <>
+                <span className="px-2.5 py-1.5 text-xs font-semibold text-emerald-200 bg-emerald-500/15 border border-emerald-400/40 rounded-lg">
+                  {user.displayName || user.email}
+                </span>
+                <button
+                  type="button"
+                  disabled={cloudSyncBusy}
+                  onClick={() => void handleManualCloudSync()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-cyan-200 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 rounded-lg transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  {cloudSyncedToast ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-300" />
+                  ) : (
+                    <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncBusy ? 'animate-spin' : ''}`} />
+                  )}
+                  <span>{cloudSyncedToast ? copy.cloudSyncedLabel : copy.cloudSyncBtn}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={authBusy}
+                  onClick={() => void signOut()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-500/50 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{copy.cloudSignOutBtn}</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={!authReady || authBusy}
+                onClick={() => {
+                  clearAuthError();
+                  setErrorBanner(null);
+                  void signInWithGoogle();
+                }}
+                className="inline-flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-60 rounded-lg transition-colors shadow-sm cursor-pointer"
+              >
+                {authBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                <span>{authBusy ? copy.cloudSigningIn : copy.cloudSignInBtn}</span>
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {isCloudMode && user ? (
-            <>
-              <span className="px-2.5 py-1.5 text-xs font-semibold text-emerald-200 bg-emerald-500/15 border border-emerald-400/40 rounded-lg">
-                {user.displayName || user.email}
-              </span>
-              <button
-                type="button"
-                disabled={authBusy}
-                onClick={() => void signOut()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-500/50 rounded-lg transition-colors"
+        {/* Google Cloud (GCP) & Amazon AWS Multi-Cloud Routing Bar */}
+        <div className="pt-2.5 border-t border-slate-700/70 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-200">
+              <Server className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
+              <span>{copy.multiCloudTitle}:</span>
+            </span>
+
+            {(['primary', 'gcp', 'aws'] as CloudProviderId[]).map((nodeId) => {
+              const probe = cloudNodeProbes.find((p) => p.id === nodeId);
+              const label =
+                nodeId === 'primary'
+                  ? copy.multiCloudPrimary
+                  : nodeId === 'gcp'
+                  ? copy.multiCloudGcp
+                  : copy.multiCloudAws;
+              const isSelected = activeMultiCloudNode === nodeId;
+              const isConfigured = probe?.configured ?? nodeId === 'primary';
+              const isOnline = Boolean(probe?.reachable);
+              return (
+                <span
+                  key={nodeId}
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border font-medium ${
+                    isOnline
+                      ? isSelected
+                        ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200'
+                        : 'bg-slate-800/80 border-slate-600/70 text-slate-200'
+                      : isConfigured
+                      ? 'bg-amber-500/10 border-amber-400/40 text-amber-200'
+                      : 'bg-slate-950/70 border-slate-700/70 text-slate-400'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isOnline
+                        ? 'bg-emerald-400'
+                        : isConfigured
+                        ? 'bg-amber-400'
+                        : 'bg-slate-500'
+                    }`}
+                  />
+                  <span>{label}</span>
+                  {probe?.region && (
+                    <span dir="ltr" className="text-[10px] font-mono text-slate-400">
+                      ({probe.region})
+                    </span>
+                  )}
+                  <span dir="ltr" className="text-[10px] font-mono">
+                    {isOnline && probe?.latencyMs !== null
+                      ? `${probe?.latencyMs}ms`
+                      : isConfigured
+                      ? copy.multiCloudUnreachable
+                      : copy.multiCloudNotConfigured}
+                  </span>
+                </span>
+              );
+            })}
+
+            {firebaseLatencyMs !== null && (
+              <span
+                dir="ltr"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-cyan-400/40 bg-cyan-500/10 text-cyan-200 text-[10px] font-mono"
               >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>{copy.cloudSignOutBtn}</span>
-              </button>
-            </>
-          ) : (
+                Firebase: {firebaseLatencyMs}ms
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-300">
+              <span>{copy.multiCloudRoutingLabel}:</span>
+              <select
+                value={multiCloudConfig.routingMode}
+                onChange={(e) => {
+                  const nextMode = e.target.value as CloudRoutingMode;
+                  const updated = saveMultiCloudConfig({ routingMode: nextMode });
+                  setMultiCloudConfig(updated);
+                  void runMultiCloudProbe(updated);
+                }}
+                className="px-2 py-1 text-[11px] font-semibold text-white bg-slate-950 border border-slate-600/70 rounded-md"
+              >
+                <option value="auto">{copy.multiCloudAuto}</option>
+                <option value="primary">{copy.multiCloudPrimary}</option>
+                <option value="gcp">{copy.multiCloudGcp}</option>
+                <option value="aws">{copy.multiCloudAws}</option>
+              </select>
+            </label>
+
             <button
               type="button"
-              disabled={!authReady || authBusy}
-              onClick={() => {
-                clearAuthError();
-                setErrorBanner(null);
-                void signInWithGoogle();
-              }}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-60 rounded-lg transition-colors shadow-sm cursor-pointer"
+              disabled={isProbingClouds}
+              onClick={() => void runMultiCloudProbe()}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-cyan-200 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/40 rounded-md transition-colors disabled:opacity-60 cursor-pointer"
             >
-              {authBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-              <span>{authBusy ? copy.cloudSigningIn : copy.cloudSignInBtn}</span>
+              {isProbingClouds ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Zap className="w-3 h-3" />
+              )}
+              <span>{isProbingClouds ? copy.multiCloudProbing : copy.multiCloudProbeBtn}</span>
             </button>
-          )}
+
+            <button
+              type="button"
+              onClick={() => setShowMultiCloudEditor((v) => !v)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-600/70 rounded-md transition-colors cursor-pointer"
+            >
+              <Settings2 className="w-3 h-3" />
+              <span>{copy.multiCloudConfigBtn}</span>
+            </button>
+          </div>
         </div>
+
+        {showMultiCloudEditor && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const updated = saveMultiCloudConfig({
+                gcpUrl: gcpUrlDraft,
+                gcpRegion: gcpRegionDraft,
+                awsUrl: awsUrlDraft,
+                awsRegion: awsRegionDraft,
+              });
+              setMultiCloudConfig(updated);
+              setGcpUrlDraft(updated.gcpUrl);
+              setGcpRegionDraft(updated.gcpRegion);
+              setAwsUrlDraft(updated.awsUrl);
+              setAwsRegionDraft(updated.awsRegion);
+              setCloudNodesSavedToast(true);
+              globalThis.setTimeout(() => setCloudNodesSavedToast(false), 1800);
+              void runMultiCloudProbe(updated);
+            }}
+            className="pt-2.5 border-t border-slate-800 grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end"
+          >
+            <div className="md:col-span-4 space-y-1">
+              <label className="block text-[11px] font-semibold text-slate-300">
+                {copy.multiCloudGcp} URL
+              </label>
+              <input
+                type="url"
+                dir="ltr"
+                value={gcpUrlDraft}
+                onChange={(e) => setGcpUrlDraft(e.target.value)}
+                placeholder="https://service.a.run.app"
+                className="w-full px-2.5 py-1.5 text-xs font-mono text-white bg-slate-950/90 border border-slate-600/70 rounded-md"
+              />
+            </div>
+            <div className="md:col-span-2 space-y-1">
+              <label className="block text-[11px] font-semibold text-slate-300">GCP Region</label>
+              <input
+                type="text"
+                dir="ltr"
+                value={gcpRegionDraft}
+                onChange={(e) => setGcpRegionDraft(e.target.value)}
+                placeholder="europe-west2"
+                className="w-full px-2.5 py-1.5 text-xs font-mono text-white bg-slate-950/90 border border-slate-600/70 rounded-md"
+              />
+            </div>
+            <div className="md:col-span-4 space-y-1">
+              <label className="block text-[11px] font-semibold text-slate-300">
+                {copy.multiCloudAws} URL
+              </label>
+              <input
+                type="url"
+                dir="ltr"
+                value={awsUrlDraft}
+                onChange={(e) => setAwsUrlDraft(e.target.value)}
+                placeholder="https://api.eu-west-1.amazonaws.com"
+                className="w-full px-2.5 py-1.5 text-xs font-mono text-white bg-slate-950/90 border border-slate-600/70 rounded-md"
+              />
+            </div>
+            <div className="md:col-span-2 flex items-center gap-1.5">
+              <input
+                type="text"
+                dir="ltr"
+                value={awsRegionDraft}
+                onChange={(e) => setAwsRegionDraft(e.target.value)}
+                placeholder="eu-west-1"
+                aria-label="AWS Region"
+                className="w-24 px-2 py-1.5 text-xs font-mono text-white bg-slate-950/90 border border-slate-600/70 rounded-md"
+              />
+              <button
+                type="submit"
+                className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-md transition-colors cursor-pointer"
+              >
+                {cloudNodesSavedToast ? <Check className="w-3.5 h-3.5" /> : null}
+                <span>{cloudNodesSavedToast ? copy.multiCloudSaved : copy.multiCloudSaveNodes}</span>
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       {errorBanner && (
@@ -2388,13 +2924,17 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
                       <div className="text-xs sm:text-sm font-bold text-white">
                         {effectiveMatchmakingStatus.searching ? copy.searchingStatus : copy.warmupTitle}
                       </div>
-                      <div className="text-[11px] sm:text-xs text-slate-300 truncate">
+                      <div className="text-[11px] sm:text-xs text-slate-300">
                         {effectiveMatchmakingStatus.searching
-                          ? `${effectiveMatchmakingStatus.timeControlId ?? searchTimeControl} · ${
-                              effectiveMatchmakingStatus.targetPlatform === 'all'
-                                ? copy.allPlatforms
-                                : PLATFORM_LABELS[effectiveMatchmakingStatus.targetPlatform][language]
-                            }`
+                          ? searchElapsedMs >= 45_000
+                            ? copy.searchingNoHumanHint
+                            : searchElapsedMs >= 15_000
+                            ? copy.searchingWidening
+                            : `${effectiveMatchmakingStatus.timeControlId ?? searchTimeControl} · ${
+                                effectiveMatchmakingStatus.targetPlatform === 'all'
+                                  ? copy.allPlatforms
+                                  : PLATFORM_LABELS[effectiveMatchmakingStatus.targetPlatform][language]
+                              }`
                           : copy.warmupSubtitle}
                       </div>
                     </div>
@@ -2566,6 +3106,12 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
                     </>
                   )}
                 </button>
+
+                {effectiveMatchmakingStatus.searching && searchElapsedMs >= 15_000 && (
+                  <p className="text-[11px] sm:text-xs text-cyan-200/90 bg-cyan-500/10 border border-cyan-400/35 rounded-lg px-3 py-2 leading-relaxed">
+                    {searchElapsedMs >= 45_000 ? copy.searchingNoHumanHint : copy.searchingWidening}
+                  </p>
+                )}
 
                 {/* Real Connected Players by Platform Breakdown */}
                 <div className="pt-2 border-t border-slate-700/70 space-y-2">

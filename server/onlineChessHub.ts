@@ -731,150 +731,8 @@ export class OnlineChessHub {
           joinedAt: Date.now(),
         };
 
-        // 1. Search real queued players across platforms
-        let bestCandidate: MatchQueueEntry | null = null;
-        let bestEloDiff = Number.POSITIVE_INFINITY;
-
-        for (const candidate of this.matchmakingQueue.values()) {
-          if (candidate.playerId === playerId) continue;
-          if (!this.playerSockets.has(candidate.playerId)) continue;
-          if (candidate.timeControlId !== seeker.timeControlId) continue;
-
-          const seekerAllowsCandPlat =
-            seeker.targetPlatform === 'all' || seeker.targetPlatform === candidate.platform;
-          const candAllowsSeekerPlat =
-            candidate.targetPlatform === 'all' || candidate.targetPlatform === seeker.platform;
-          if (!seekerAllowsCandPlat || !candAllowsSeekerPlat) continue;
-
-          const seekerAllowsCandCountry =
-            seeker.targetCountry === 'ALL' || seeker.targetCountry === candidate.country;
-          const candAllowsSeekerCountry =
-            candidate.targetCountry === 'ALL' || candidate.targetCountry === seeker.country;
-          if (!seekerAllowsCandCountry || !candAllowsSeekerCountry) continue;
-
-          const eloDiff = Math.abs(candidate.elo - seeker.elo);
-          if (eloDiff < bestEloDiff) {
-            bestEloDiff = eloDiff;
-            bestCandidate = candidate;
-          }
-        }
-
-        if (bestCandidate) {
-          this.matchmakingQueue.delete(playerId);
-          this.matchmakingQueue.delete(bestCandidate.playerId);
-
-          const candProfile =
-            this.store.profiles[bestCandidate.playerId] ??
-            this.upsertProfile(bestCandidate.playerId, 'Player', bestCandidate.country, bestCandidate.platform);
-
-          const tc = ONLINE_TIME_CONTROLS[tcId];
-          const roomId = `room_${crypto.randomBytes(6).toString('hex')}`;
-          const code = generateRoomCode();
-          const seekerIsWhite = crypto.randomInt(0, 2) === 0;
-
-          const seekerSeat: OnlineRoomSeat = {
-            playerId: profile.playerId,
-            name: profile.name,
-            country: profile.country,
-            platform: profile.platform,
-            elo: profile.elo,
-            connected: true,
-          };
-          const candSeat: OnlineRoomSeat = {
-            playerId: candProfile.playerId,
-            name: candProfile.name,
-            country: candProfile.country,
-            platform: candProfile.platform,
-            elo: candProfile.elo,
-            connected: true,
-          };
-
-          const room: InternalRoom = {
-            roomId,
-            code,
-            title: `${profile.name} vs ${candProfile.name}`,
-            timeControlId: tcId,
-            isPrivate: false,
-            status: 'playing',
-            chess: new Chess(),
-            white: seekerIsWhite ? seekerSeat : candSeat,
-            black: seekerIsWhite ? candSeat : seekerSeat,
-            whiteTimeMs: tc.initialMs,
-            blackTimeMs: tc.initialMs,
-            lastClockSyncAt: Date.now(),
-            lastMove: null,
-            moves: [],
-            winner: null,
-            endReason: null,
-            drawOfferBy: null,
-            rematchVotes: { w: false, b: false },
-            spectators: new Set(),
-            chat: [],
-            processedMoveIds: new Set(),
-            eloDelta: null,
-            createdAt: Date.now(),
-            finishedAt: null,
-          };
-
-          this.rooms.set(roomId, room);
-          for (const s of this.playerSockets.get(seeker.playerId) ?? []) {
-            const sess = this.sessions.get(s);
-            if (sess) sess.activeRoomId = roomId;
-          }
-          for (const s of this.playerSockets.get(candProfile.playerId) ?? []) {
-            const sess = this.sessions.get(s);
-            if (sess) sess.activeRoomId = roomId;
-          }
-
-          const state = this.toRoomState(room);
-          this.sendToPlayer(seeker.playerId, { type: 'match:found', room: state });
-          this.sendToPlayer(candProfile.playerId, { type: 'match:found', room: state });
-          this.broadcastToRoom(room, { type: 'room:state', room: state });
-          this.broadcastLobby();
-          this.broadcastMatchmakingStatus();
-          break;
-        }
-
-        // 2. Fallback: pair automatically with a compatible open public waiting room
-        let matchedRoom: InternalRoom | null = null;
-        for (const room of this.rooms.values()) {
-          if (room.isPrivate || room.status !== 'waiting') continue;
-          if (room.timeControlId !== seeker.timeControlId) continue;
-          const hostSeat = room.white ?? room.black;
-          if (!hostSeat || hostSeat.playerId === playerId || !hostSeat.connected) continue;
-          if (seeker.targetPlatform !== 'all' && hostSeat.platform !== seeker.targetPlatform) continue;
-          if (seeker.targetCountry !== 'ALL' && hostSeat.country !== seeker.targetCountry) continue;
-          matchedRoom = room;
-          break;
-        }
-
-        if (matchedRoom) {
-          this.matchmakingQueue.delete(playerId);
-          const seat: OnlineRoomSeat = {
-            playerId: profile.playerId,
-            name: profile.name,
-            country: profile.country,
-            platform: profile.platform,
-            elo: profile.elo,
-            connected: true,
-          };
-          if (!matchedRoom.white) matchedRoom.white = seat;
-          else if (!matchedRoom.black) matchedRoom.black = seat;
-          matchedRoom.status = 'playing';
-          matchedRoom.lastClockSyncAt = Date.now();
-          session.activeRoomId = matchedRoom.roomId;
-
-          const state = this.toRoomState(matchedRoom);
-          this.sendToPlayer(playerId, { type: 'match:found', room: state });
-          if (matchedRoom.white && matchedRoom.white.playerId !== playerId) {
-            this.sendToPlayer(matchedRoom.white.playerId, { type: 'match:found', room: state });
-          }
-          if (matchedRoom.black && matchedRoom.black.playerId !== playerId) {
-            this.sendToPlayer(matchedRoom.black.playerId, { type: 'match:found', room: state });
-          }
-          this.broadcastToRoom(matchedRoom, { type: 'room:state', room: state });
-          this.broadcastLobby();
-          this.broadcastMatchmakingStatus();
+        // 1 & 2. Attempt immediate match with queued seekers or open public waiting rooms
+        if (this.tryPairSeeker(seeker)) {
           break;
         }
 
@@ -947,6 +805,11 @@ export class OnlineChessHub {
 
         this.rooms.set(roomId, room);
         session.activeRoomId = roomId;
+
+        if (!room.isPrivate && this.tryPairPublicRoomWithQueue(room)) {
+          break;
+        }
+
         this.sendToPlayer(playerId, { type: 'room:state', room: this.toRoomState(room) });
         this.broadcastLobby();
         this.broadcastMatchmakingStatus();
@@ -1416,7 +1279,241 @@ export class OnlineChessHub {
     this.broadcastMatchmakingStatus();
   }
 
+  private areQueueEntriesCompatible(
+    seeker: MatchQueueEntry,
+    candidate: MatchQueueEntry,
+    now: number
+  ): boolean {
+    const seekerWaitMs = Math.max(0, now - seeker.joinedAt);
+    const candWaitMs = Math.max(0, now - candidate.joinedAt);
+    const maxWaitMs = Math.max(seekerWaitMs, candWaitMs);
+
+    const relaxTimeControl = maxWaitMs >= 30_000;
+    if (!relaxTimeControl && candidate.timeControlId !== seeker.timeControlId) {
+      return false;
+    }
+
+    const seekerRelaxFilters = seekerWaitMs >= 15_000;
+    const candRelaxFilters = candWaitMs >= 15_000;
+
+    const seekerAllowsCandPlat =
+      seekerRelaxFilters || seeker.targetPlatform === 'all' || seeker.targetPlatform === candidate.platform;
+    const candAllowsSeekerPlat =
+      candRelaxFilters || candidate.targetPlatform === 'all' || candidate.targetPlatform === seeker.platform;
+    if (!seekerAllowsCandPlat || !candAllowsSeekerPlat) return false;
+
+    const seekerAllowsCandCountry =
+      seekerRelaxFilters || seeker.targetCountry === 'ALL' || seeker.targetCountry === candidate.country;
+    const candAllowsSeekerCountry =
+      candRelaxFilters || candidate.targetCountry === 'ALL' || candidate.targetCountry === seeker.country;
+    if (!seekerAllowsCandCountry || !candAllowsSeekerCountry) return false;
+
+    return true;
+  }
+
+  private isRoomCompatibleWithSeeker(
+    room: InternalRoom,
+    seeker: MatchQueueEntry,
+    now: number
+  ): boolean {
+    if (room.isPrivate || room.status !== 'waiting') return false;
+    const hostSeat = room.white ?? room.black;
+    if (!hostSeat || hostSeat.playerId === seeker.playerId || !hostSeat.connected) return false;
+
+    const waitMs = Math.max(0, now - seeker.joinedAt, now - room.createdAt);
+    if (waitMs < 30_000 && room.timeControlId !== seeker.timeControlId) return false;
+
+    if (waitMs < 15_000) {
+      if (seeker.targetPlatform !== 'all' && hostSeat.platform !== seeker.targetPlatform) return false;
+      if (seeker.targetCountry !== 'ALL' && hostSeat.country !== seeker.targetCountry) return false;
+    }
+    return true;
+  }
+
+  private pairSeekerIntoWaitingRoom(seeker: MatchQueueEntry, matchedRoom: InternalRoom): void {
+    const playerId = seeker.playerId;
+    this.matchmakingQueue.delete(playerId);
+    const profile =
+      this.store.profiles[playerId] ??
+      this.upsertProfile(playerId, 'Player', seeker.country, seeker.platform);
+
+    const seat: OnlineRoomSeat = {
+      playerId: profile.playerId,
+      name: profile.name,
+      country: profile.country,
+      platform: profile.platform,
+      elo: profile.elo,
+      connected: true,
+    };
+    if (!matchedRoom.white) matchedRoom.white = seat;
+    else if (!matchedRoom.black) matchedRoom.black = seat;
+    matchedRoom.status = 'playing';
+    matchedRoom.lastClockSyncAt = Date.now();
+
+    for (const s of this.playerSockets.get(playerId) ?? []) {
+      const sess = this.sessions.get(s);
+      if (sess) sess.activeRoomId = matchedRoom.roomId;
+    }
+
+    const state = this.toRoomState(matchedRoom);
+    this.sendToPlayer(playerId, { type: 'match:found', room: state });
+    if (matchedRoom.white && matchedRoom.white.playerId !== playerId) {
+      this.sendToPlayer(matchedRoom.white.playerId, { type: 'match:found', room: state });
+    }
+    if (matchedRoom.black && matchedRoom.black.playerId !== playerId) {
+      this.sendToPlayer(matchedRoom.black.playerId, { type: 'match:found', room: state });
+    }
+    this.broadcastToRoom(matchedRoom, { type: 'room:state', room: state });
+    this.broadcastLobby();
+    this.broadcastMatchmakingStatus();
+  }
+
+  private tryPairSeeker(seeker: MatchQueueEntry): boolean {
+    const now = Date.now();
+    const playerId = seeker.playerId;
+    const profile =
+      this.store.profiles[playerId] ??
+      this.upsertProfile(playerId, 'Player', seeker.country, seeker.platform);
+
+    let bestCandidate: MatchQueueEntry | null = null;
+    let bestEloDiff = Number.POSITIVE_INFINITY;
+
+    for (const candidate of this.matchmakingQueue.values()) {
+      if (candidate.playerId === playerId) continue;
+      if (!this.playerSockets.has(candidate.playerId)) continue;
+      if (!this.areQueueEntriesCompatible(seeker, candidate, now)) continue;
+
+      const sameTcBonus = candidate.timeControlId === seeker.timeControlId ? 0 : 10_000;
+      const eloDiff = sameTcBonus + Math.abs(candidate.elo - seeker.elo);
+      if (eloDiff < bestEloDiff) {
+        bestEloDiff = eloDiff;
+        bestCandidate = candidate;
+      }
+    }
+
+    if (bestCandidate) {
+      this.matchmakingQueue.delete(playerId);
+      this.matchmakingQueue.delete(bestCandidate.playerId);
+
+      const candProfile =
+        this.store.profiles[bestCandidate.playerId] ??
+        this.upsertProfile(bestCandidate.playerId, 'Player', bestCandidate.country, bestCandidate.platform);
+
+      const tcId =
+        seeker.joinedAt <= bestCandidate.joinedAt
+          ? seeker.timeControlId
+          : bestCandidate.timeControlId;
+      const tc = ONLINE_TIME_CONTROLS[tcId];
+      const roomId = `room_${crypto.randomBytes(6).toString('hex')}`;
+      const code = generateRoomCode();
+      const seekerIsWhite = crypto.randomInt(0, 2) === 0;
+
+      const seekerSeat: OnlineRoomSeat = {
+        playerId: profile.playerId,
+        name: profile.name,
+        country: profile.country,
+        platform: profile.platform,
+        elo: profile.elo,
+        connected: true,
+      };
+      const candSeat: OnlineRoomSeat = {
+        playerId: candProfile.playerId,
+        name: candProfile.name,
+        country: candProfile.country,
+        platform: candProfile.platform,
+        elo: candProfile.elo,
+        connected: true,
+      };
+
+      const room: InternalRoom = {
+        roomId,
+        code,
+        title: `${profile.name} vs ${candProfile.name}`,
+        timeControlId: tcId,
+        isPrivate: false,
+        status: 'playing',
+        chess: new Chess(),
+        white: seekerIsWhite ? seekerSeat : candSeat,
+        black: seekerIsWhite ? candSeat : seekerSeat,
+        whiteTimeMs: tc.initialMs,
+        blackTimeMs: tc.initialMs,
+        lastClockSyncAt: Date.now(),
+        lastMove: null,
+        moves: [],
+        winner: null,
+        endReason: null,
+        drawOfferBy: null,
+        rematchVotes: { w: false, b: false },
+        spectators: new Set(),
+        chat: [],
+        processedMoveIds: new Set(),
+        eloDelta: null,
+        createdAt: Date.now(),
+        finishedAt: null,
+      };
+
+      this.rooms.set(roomId, room);
+      for (const s of this.playerSockets.get(seeker.playerId) ?? []) {
+        const sess = this.sessions.get(s);
+        if (sess) sess.activeRoomId = roomId;
+      }
+      for (const s of this.playerSockets.get(candProfile.playerId) ?? []) {
+        const sess = this.sessions.get(s);
+        if (sess) sess.activeRoomId = roomId;
+      }
+
+      const state = this.toRoomState(room);
+      this.sendToPlayer(seeker.playerId, { type: 'match:found', room: state });
+      this.sendToPlayer(candProfile.playerId, { type: 'match:found', room: state });
+      this.broadcastToRoom(room, { type: 'room:state', room: state });
+      this.broadcastLobby();
+      this.broadcastMatchmakingStatus();
+      return true;
+    }
+
+    for (const room of this.rooms.values()) {
+      if (this.isRoomCompatibleWithSeeker(room, seeker, now)) {
+        this.pairSeekerIntoWaitingRoom(seeker, room);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private tryPairPublicRoomWithQueue(room: InternalRoom): boolean {
+    if (room.isPrivate || room.status !== 'waiting') return false;
+    const now = Date.now();
+    for (const seeker of this.matchmakingQueue.values()) {
+      if (!this.playerSockets.has(seeker.playerId)) continue;
+      if (this.isRoomCompatibleWithSeeker(room, seeker, now)) {
+        this.pairSeekerIntoWaitingRoom(seeker, room);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private sweepMatchmakingQueue(): void {
+    if (this.matchmakingQueue.size === 0) return;
+    let pruned = false;
+    for (const [pid] of this.matchmakingQueue.entries()) {
+      if (!this.playerSockets.has(pid)) {
+        this.matchmakingQueue.delete(pid);
+        pruned = true;
+      }
+    }
+    if (pruned) {
+      this.broadcastMatchmakingStatus();
+    }
+    for (const seeker of Array.from(this.matchmakingQueue.values())) {
+      if (!this.matchmakingQueue.has(seeker.playerId)) continue;
+      this.tryPairSeeker(seeker);
+    }
+  }
+
   private sweepRooms(): void {
+    this.sweepMatchmakingQueue();
     const now = Date.now();
     for (const room of this.rooms.values()) {
       if (room.status === 'playing') {

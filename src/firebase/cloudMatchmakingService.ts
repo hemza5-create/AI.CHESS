@@ -10,6 +10,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -546,6 +547,94 @@ export async function claimQueueCandidateAtomically(
   }
 }
 
+const QUEUE_STALE_MS = 3 * 60_000;
+
+export function findBestCloudQueueCandidate(
+  selfUid: string,
+  selfCountryRaw: string,
+  selfPlatformRaw: ClientPlatform,
+  selfElo: number,
+  timeControlId: OnlineTimeControlId,
+  targetPlatform: PlatformFilter,
+  targetCountryRaw: string,
+  tickets: CloudQueueTicket[],
+  elapsedWaitMs = 0
+): CloudQueueTicket | null {
+  const now = Date.now();
+  const targetCountry = sanitizeTargetCountry(targetCountryRaw);
+  const myCountry = sanitizeCountry(selfCountryRaw);
+  const myPlatform = sanitizePlatform(selfPlatformRaw);
+  const relaxFilters = elapsedWaitMs >= 15_000;
+  const relaxTimeControl = elapsedWaitMs >= 30_000;
+
+  const eligible = tickets
+    .filter((cand) => {
+      if (cand.uid === selfUid || cand.status !== 'searching') return false;
+      if (Math.abs(now - cand.updatedAtMs) > QUEUE_STALE_MS) return false;
+
+      if (!relaxTimeControl && cand.timeControlId !== timeControlId) return false;
+
+      if (!relaxFilters) {
+        const selfAllowsCandPlat = targetPlatform === 'all' || targetPlatform === cand.platform;
+        const candAllowsSelfPlat = cand.targetPlatform === 'all' || cand.targetPlatform === myPlatform;
+        if (!selfAllowsCandPlat || !candAllowsSelfPlat) return false;
+
+        const selfAllowsCandCountry = targetCountry === 'ALL' || targetCountry === cand.country;
+        const candAllowsSelfCountry = cand.targetCountry === 'ALL' || cand.targetCountry === myCountry;
+        if (!selfAllowsCandCountry || !candAllowsSelfCountry) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => {
+      const sameTcA = a.timeControlId === timeControlId ? 0 : 1;
+      const sameTcB = b.timeControlId === timeControlId ? 0 : 1;
+      if (sameTcA !== sameTcB) return sameTcA - sameTcB;
+      const eloDiffA = Math.abs(a.elo - selfElo);
+      const eloDiffB = Math.abs(b.elo - selfElo);
+      if (eloDiffA !== eloDiffB) return eloDiffA - eloDiffB;
+      return b.updatedAtMs - a.updatedAtMs;
+    });
+
+  return eligible[0] ?? null;
+}
+
+export function findBestWaitingCloudRoom(
+  selfUid: string,
+  timeControlId: OnlineTimeControlId,
+  targetPlatform: PlatformFilter,
+  targetCountryRaw: string,
+  openRooms: OnlineRoomSummary[],
+  elapsedWaitMs = 0
+): OnlineRoomSummary | null {
+  const now = Date.now();
+  const targetCountry = sanitizeTargetCountry(targetCountryRaw);
+  const relaxFilters = elapsedWaitMs >= 15_000;
+  const relaxTimeControl = elapsedWaitMs >= 30_000;
+
+  const eligible = openRooms
+    .filter((room) => {
+      if (room.isPrivate || room.status !== 'waiting') return false;
+      if (room.white?.playerId === selfUid || room.black?.playerId === selfUid) return false;
+      if (room.white && room.black) return false;
+      if (Math.abs(now - room.createdAt) > 15 * 60_000) return false;
+      if (!relaxTimeControl && room.timeControlId !== timeControlId) return false;
+
+      const host = room.white ?? room.black;
+      if (!host) return false;
+
+      if (!relaxFilters) {
+        if (targetPlatform !== 'all' && host.platform !== targetPlatform) return false;
+        if (targetCountry !== 'ALL' && host.country !== targetCountry) return false;
+      }
+
+      return true;
+    })
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  return eligible[0] ?? null;
+}
+
 export async function startCloudQueueSearch(
   selfProfile: OnlinePlayerProfile,
   timeControlId: OnlineTimeControlId,
@@ -557,15 +646,14 @@ export async function startCloudQueueSearch(
   const myPlatform = sanitizePlatform(selfProfile.platform);
   const myName = sanitizeDisplayName(selfProfile.name);
 
-  // 1. Check active queue entries for compatible cross-platform players
+  // 1. Check active queue entries for compatible cross-platform players (freshest first)
   try {
     const queueSnap = await getDocs(
-      query(collection(db, 'matchmakingQueue'), where('status', '==', 'searching'), limit(50))
+      query(collection(db, 'matchmakingQueue'), where('status', '==', 'searching'), limit(80))
     );
-    const now = Date.now();
-    for (const d of queueSnap.docs) {
+    const tickets: CloudQueueTicket[] = queueSnap.docs.map((d) => {
       const raw = d.data() as Record<string, unknown>;
-      const cand: CloudQueueTicket = {
+      return {
         uid: String(raw.uid ?? d.id),
         displayName: String(raw.displayName ?? 'Player'),
         country: sanitizeCountry(String(raw.country ?? 'INTL')),
@@ -579,19 +667,20 @@ export async function startCloudQueueSearch(
         matchedByUid: '',
         updatedAtMs: toMs(raw.updatedAt),
       };
+    });
 
-      if (cand.uid === selfProfile.playerId) continue;
-      if (now - cand.updatedAtMs > 10 * 60_000) continue; // skip stale abandoned entries
-      if (cand.timeControlId !== timeControlId) continue;
-
-      const selfAllowsCandPlat = targetPlatform === 'all' || targetPlatform === cand.platform;
-      const candAllowsSelfPlat = cand.targetPlatform === 'all' || cand.targetPlatform === myPlatform;
-      if (!selfAllowsCandPlat || !candAllowsSelfPlat) continue;
-
-      const selfAllowsCandCountry = targetCountry === 'ALL' || targetCountry === cand.country;
-      const candAllowsSelfCountry = cand.targetCountry === 'ALL' || cand.targetCountry === myCountry;
-      if (!selfAllowsCandCountry || !candAllowsSelfCountry) continue;
-
+    const cand = findBestCloudQueueCandidate(
+      selfProfile.playerId,
+      myCountry,
+      myPlatform,
+      selfProfile.elo,
+      timeControlId,
+      targetPlatform,
+      targetCountry,
+      tickets,
+      0
+    );
+    if (cand) {
       const matchId = await claimQueueCandidateAtomically(selfProfile, cand);
       return { matchedMatchId: matchId };
     }
@@ -602,19 +691,27 @@ export async function startCloudQueueSearch(
   // 2. Check open public waiting matches
   try {
     const openSnap = await getDocs(
-      query(collection(db, 'matches'), where('isPrivate', '==', false), limit(40))
+      query(collection(db, 'matches'), where('isPrivate', '==', false), limit(50))
     );
-    for (const d of openSnap.docs) {
-      const m = d.data() as FirestoreMatchDoc;
-      if (m.status !== 'waiting' || m.timeControlId !== timeControlId) continue;
-      if (m.whiteUid === selfProfile.playerId || m.blackUid === selfProfile.playerId) continue;
-      const hostPlatform = m.whiteUid ? m.whitePlatform : m.blackPlatform;
-      const hostCountry = m.whiteUid ? m.whiteCountry : m.blackCountry;
-      if (targetPlatform !== 'all' && hostPlatform !== targetPlatform) continue;
-      if (targetCountry !== 'ALL' && hostCountry !== targetCountry) continue;
-
-      const joinedId = await joinCloudMatchDocument(m, selfProfile);
-      return { matchedMatchId: joinedId };
+    const summaries = openSnap.docs
+      .map((d) => mapMatchDocToSummary(d.data() as FirestoreMatchDoc));
+    const waitingMatch = findBestWaitingCloudRoom(
+      selfProfile.playerId,
+      timeControlId,
+      targetPlatform,
+      targetCountry,
+      summaries,
+      0
+    );
+    if (waitingMatch) {
+      const targetSnap = openSnap.docs.find((d) => d.id === waitingMatch.roomId);
+      if (targetSnap) {
+        const joinedId = await joinCloudMatchDocument(
+          targetSnap.data() as FirestoreMatchDoc,
+          selfProfile
+        );
+        return { matchedMatchId: joinedId };
+      }
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'matches');
@@ -661,6 +758,24 @@ export async function startCloudQueueSearch(
   }
 }
 
+export async function touchCloudQueueTicket(uid: string): Promise<void> {
+  const path = `matchmakingQueue/${uid}`;
+  const ref = doc(db, 'matchmakingQueue', uid);
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return;
+      const data = snap.data() as Record<string, unknown>;
+      if (data.status !== 'searching') return;
+      tx.update(ref, {
+        updatedAt: serverTimestamp(),
+      });
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
 export async function cancelCloudQueueSearch(uid: string): Promise<void> {
   const path = `matchmakingQueue/${uid}`;
   try {
@@ -689,40 +804,50 @@ export async function createCloudRoom(
   const myCountry = sanitizeCountry(selfProfile.country);
   const myPlatform = sanitizePlatform(selfProfile.platform);
 
+  const code = generateRoomCode();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'matches', matchId), {
+    matchId,
+    code,
+    title: sanitizeRoomTitle(titleRaw, myName),
+    timeControlId,
+    isPrivate,
+    status: 'waiting',
+    createdByUid: selfProfile.playerId,
+    whiteUid: side === 'w' ? selfProfile.playerId : '',
+    whiteName: side === 'w' ? myName : '',
+    whiteCountry: side === 'w' ? myCountry : '',
+    whitePlatform: side === 'w' ? myPlatform : 'web',
+    whiteElo: side === 'w' ? selfProfile.elo : 0,
+    blackUid: side === 'b' ? selfProfile.playerId : '',
+    blackName: side === 'b' ? myName : '',
+    blackCountry: side === 'b' ? myCountry : '',
+    blackPlatform: side === 'b' ? myPlatform : 'web',
+    blackElo: side === 'b' ? selfProfile.elo : 0,
+    fen: new Chess().fen(),
+    turn: 'w',
+    whiteTimeMs: tc.initialMs,
+    blackTimeMs: tc.initialMs,
+    lastMoveFrom: '',
+    lastMoveTo: '',
+    lastMoveSan: '',
+    moveCount: 0,
+    movesSan: [],
+    winner: '',
+    endReason: '',
+    drawOfferBy: '',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(db, 'roomCodes', code), {
+    code,
+    matchId,
+    createdByUid: selfProfile.playerId,
+    createdAt: serverTimestamp(),
+  });
+
   try {
-    await setDoc(doc(db, 'matches', matchId), {
-      matchId,
-      code: generateRoomCode(),
-      title: sanitizeRoomTitle(titleRaw, myName),
-      timeControlId,
-      isPrivate,
-      status: 'waiting',
-      createdByUid: selfProfile.playerId,
-      whiteUid: side === 'w' ? selfProfile.playerId : '',
-      whiteName: side === 'w' ? myName : '',
-      whiteCountry: side === 'w' ? myCountry : '',
-      whitePlatform: side === 'w' ? myPlatform : 'web',
-      whiteElo: side === 'w' ? selfProfile.elo : 0,
-      blackUid: side === 'b' ? selfProfile.playerId : '',
-      blackName: side === 'b' ? myName : '',
-      blackCountry: side === 'b' ? myCountry : '',
-      blackPlatform: side === 'b' ? myPlatform : 'web',
-      blackElo: side === 'b' ? selfProfile.elo : 0,
-      fen: new Chess().fen(),
-      turn: 'w',
-      whiteTimeMs: tc.initialMs,
-      blackTimeMs: tc.initialMs,
-      lastMoveFrom: '',
-      lastMoveTo: '',
-      lastMoveSan: '',
-      moveCount: 0,
-      movesSan: [],
-      winner: '',
-      endReason: '',
-      drawOfferBy: '',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    await batch.commit();
     await deleteDoc(doc(db, 'matchmakingQueue', selfProfile.playerId)).catch(() => undefined);
     return matchId;
   } catch (error) {
@@ -791,11 +916,31 @@ export async function joinCloudRoomByIdOrCode(
       return asSpectator ? m.matchId : await joinCloudMatchDocument(m, selfProfile);
     }
 
-    const codeSnap = await getDocs(
-      query(collection(db, 'matches'), where('code', '==', cleaned.toUpperCase()), limit(5))
+    const upperCode = cleaned.toUpperCase();
+    if (/^[A-Z0-9]{6}$/.test(upperCode)) {
+      const codeSnap = await getDoc(doc(db, 'roomCodes', upperCode));
+      if (codeSnap.exists()) {
+        const indexedMatchId = String((codeSnap.data() as Record<string, unknown>).matchId ?? '');
+        if (indexedMatchId) {
+          const matchSnap = await getDoc(doc(db, 'matches', indexedMatchId));
+          if (matchSnap.exists()) {
+            const m = matchSnap.data() as FirestoreMatchDoc;
+            return asSpectator ? m.matchId : await joinCloudMatchDocument(m, selfProfile);
+          }
+        }
+      }
+    }
+
+    const publicCodeSnap = await getDocs(
+      query(
+        collection(db, 'matches'),
+        where('isPrivate', '==', false),
+        where('code', '==', upperCode),
+        limit(1)
+      )
     );
-    if (codeSnap.empty) return null;
-    const m = codeSnap.docs[0].data() as FirestoreMatchDoc;
+    if (publicCodeSnap.empty) return null;
+    const m = publicCodeSnap.docs[0].data() as FirestoreMatchDoc;
     return asSpectator ? m.matchId : await joinCloudMatchDocument(m, selfProfile);
   } catch (error) {
     handleFirestoreError(error, OperationType.GET, `matches/${cleaned}`);
@@ -1000,10 +1145,13 @@ export async function commitCloudMatchRating(
   }
 }
 
-export async function deleteWaitingCloudMatch(matchId: string): Promise<void> {
+export async function deleteWaitingCloudMatch(matchId: string, code?: string): Promise<void> {
   const path = `matches/${matchId}`;
   try {
     await deleteDoc(doc(db, 'matches', matchId));
+    if (code && /^[A-Z0-9]{6}$/.test(code)) {
+      await deleteDoc(doc(db, 'roomCodes', code)).catch(() => undefined);
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

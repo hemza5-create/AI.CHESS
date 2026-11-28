@@ -84,7 +84,66 @@ const SERVER_ROUTES = {
   vaultPolicy: '/api/v2/vault/policy',
   onlineBootstrap: '/api/v2/online/bootstrap',
   onlineProfile: '/api/v2/online/profile',
+  cloudNodes: '/api/v2/cloud/nodes',
 } as const;
+
+function sanitizeCloudRegion(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed || /^aiza|^akia|^asia/i.test(trimmed)) return fallback;
+  if (!/^[a-z]{2}(-[a-z0-9]+)+$/.test(trimmed)) return fallback;
+  return trimmed.slice(0, 32);
+}
+
+function detectServerCloudRuntime(): { provider: 'gcp' | 'aws' | 'local'; region: string } {
+  if (
+    process.env.AWS_EXECUTION_ENV ||
+    process.env.ECS_CONTAINER_METADATA_URI ||
+    process.env.AWS_REGION ||
+    process.env.AWS_DEFAULT_REGION
+  ) {
+    return {
+      provider: 'aws',
+      region: sanitizeCloudRegion(
+        process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || process.env.AWS_CLOUD_REGION,
+        'eu-west-1'
+      ),
+    };
+  }
+  if (
+    process.env.K_SERVICE ||
+    process.env.CLOUD_RUN_JOB ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    process.env.GCP_PROJECT
+  ) {
+    return {
+      provider: 'gcp',
+      region: sanitizeCloudRegion(
+        process.env.GOOGLE_CLOUD_REGION || process.env.GCP_CLOUD_REGION,
+        'europe-west2'
+      ),
+    };
+  }
+  return {
+    provider: 'local',
+    region: sanitizeCloudRegion(process.env.GCP_CLOUD_REGION, 'europe-west2'),
+  };
+}
+
+function sanitizePublicCloudUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return '';
+    }
+    return trimmed.replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
 
 function timingSafeEqualString(a: string, b: string): boolean {
   const hashA = crypto.createHash('sha256').update(a, 'utf8').digest();
@@ -831,6 +890,7 @@ async function startServer() {
   // Engine Health Check Endpoint (verifies matching Server ID)
   app.get(SERVER_ROUTES.engineHealth, requireTrustedServerChannel, (_req: Request, res: Response) => {
     const active = getActiveEngineDescriptors();
+    const cloudRuntime = detectServerCloudRuntime();
     res.json({
       ok: fs.existsSync(active.nodeEnginePath),
       appVersion: SERVER_APP_VERSION,
@@ -841,6 +901,8 @@ async function startServer() {
       wasmScript: active.wasmScript,
       asmScript: active.asmScript,
       updatedAt: active.updatedAt,
+      cloudProvider: cloudRuntime.provider,
+      cloudRegion: cloudRuntime.region,
     });
   });
 
@@ -1628,6 +1690,45 @@ async function startServer() {
       ok: true,
       profile,
       leaderboard: onlineChessHub.getLeaderboardSnapshot(),
+    });
+  });
+
+  app.get(SERVER_ROUTES.cloudNodes, requireTrustedServerChannel, (_req: Request, res: Response) => {
+    const runtime = detectServerCloudRuntime();
+    const gcpUrl = sanitizePublicCloudUrl(process.env.GCP_CLOUD_ENDPOINT_URL);
+    const awsUrl = sanitizePublicCloudUrl(process.env.AWS_CLOUD_ENDPOINT_URL);
+    const gcpRegion = sanitizeCloudRegion(
+      process.env.GCP_CLOUD_REGION || process.env.GOOGLE_CLOUD_REGION,
+      'europe-west2'
+    );
+    const awsRegion = sanitizeCloudRegion(
+      process.env.AWS_CLOUD_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION,
+      'eu-west-1'
+    );
+
+    res.json({
+      runtimeProvider: runtime.provider,
+      runtimeRegion: runtime.region,
+      nodes: [
+        {
+          id: 'primary',
+          provider: runtime.provider,
+          region: runtime.region,
+          url: '',
+        },
+        {
+          id: 'gcp',
+          provider: 'gcp',
+          region: gcpRegion,
+          url: gcpUrl,
+        },
+        {
+          id: 'aws',
+          provider: 'aws',
+          region: awsRegion,
+          url: awsUrl,
+        },
+      ],
     });
   });
 

@@ -41,10 +41,6 @@ service cloud.firestore {
       return id is string && id.size() >= 2 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function isValidOptionalId(id) {
-      return id is string && (id == '' || (id.size() >= 2 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$')));
-    }
-
     function isValidPlatform(val) {
       return val is string && val in ['web', 'android', 'ios', 'desktop', 'pwa'];
     }
@@ -86,7 +82,7 @@ service cloud.firestore {
         && data.draws is number && data.draws >= 0
         && data.gamesPlayed is number && data.gamesPlayed >= 0
         && data.streak is number && data.streak >= -500 && data.streak <= 500
-        && (!('lastMatchId' in data) || isValidOptionalId(data.lastMatchId))
+        && (!('lastMatchId' in data) || (data.lastMatchId is string && data.lastMatchId.size() <= 128))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -111,8 +107,8 @@ service cloud.firestore {
         && isValidPlatformFilter(data.targetPlatform)
         && isValidCountryCode(data.targetCountry)
         && data.status is string && data.status in ['searching', 'matched']
-        && isValidOptionalId(data.matchedMatchId)
-        && isValidOptionalId(data.matchedByUid)
+        && data.matchedMatchId is string && data.matchedMatchId.size() <= 128
+        && data.matchedByUid is string && data.matchedByUid.size() <= 128
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -143,12 +139,12 @@ service cloud.firestore {
         && data.isPrivate is bool
         && data.status is string && data.status in ['waiting', 'playing', 'finished']
         && isValidId(data.createdByUid)
-        && isValidOptionalId(data.whiteUid)
+        && data.whiteUid is string && data.whiteUid.size() <= 128
         && data.whiteName is string && data.whiteName.size() <= 32
         && data.whiteCountry is string && data.whiteCountry.size() <= 8
         && isValidPlatform(data.whitePlatform)
         && data.whiteElo is number && data.whiteElo >= 0 && data.whiteElo <= 3500
-        && isValidOptionalId(data.blackUid)
+        && data.blackUid is string && data.blackUid.size() <= 128
         && data.blackName is string && data.blackName.size() <= 32
         && data.blackCountry is string && data.blackCountry.size() <= 8
         && isValidPlatform(data.blackPlatform)
@@ -161,10 +157,11 @@ service cloud.firestore {
         && data.lastMoveTo is string && data.lastMoveTo.size() <= 4
         && data.lastMoveSan is string && data.lastMoveSan.size() <= 16
         && data.moveCount is number && data.moveCount >= 0 && data.moveCount <= 300
-        && data.movesSan is list && data.movesSan.size() == data.moveCount
+        && data.movesSan is list && data.movesSan.size() <= 300
+        && (data.movesSan.size() == 0 || (data.movesSan[0] is string && data.movesSan[0].size() <= 16))
         && data.winner is string && data.winner in ['', 'w', 'b', 'draw']
         && data.endReason is string && data.endReason.size() <= 32
-        && data.drawOfferBy is string && data.drawOfferBy in ['', 'w', 'b']
+        && data.drawOfferBy is string && data.drawOfferBy.size() <= 1 && data.drawOfferBy in ['', 'w', 'b']
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -191,7 +188,7 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
     match /rankings/{uid} {
       allow get: if isVerifiedUser() && isValidId(uid);
-      allow list: if isVerifiedUser();
+      allow list: if isVerifiedUser() && resource.data.elo >= 400;
 
       allow create: if isVerifiedUser()
         && isValidId(uid)
@@ -227,6 +224,7 @@ service cloud.firestore {
             && incoming().diff(existing()).affectedKeys().hasOnly([
               'elo', 'bestElo', 'wins', 'losses', 'draws', 'gamesPlayed', 'streak', 'lastMatchId', 'updatedAt'
             ])
+            && incoming().lastMatchId is string
             && isValidId(incoming().lastMatchId)
             && (!('lastMatchId' in existing()) || incoming().lastMatchId != existing().lastMatchId)
             && incoming().gamesPlayed == existing().gamesPlayed + 1
@@ -249,7 +247,7 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
     match /matchmakingQueue/{queueId} {
       allow get: if isVerifiedUser() && isValidId(queueId);
-      allow list: if isVerifiedUser();
+      allow list: if isVerifiedUser() && resource.data.status in ['searching', 'matched'];
 
       allow create: if isVerifiedUser()
         && isValidId(queueId)
@@ -311,10 +309,7 @@ service cloud.firestore {
         && isValidMatch(incoming())
         && incoming().matchId == matchId
         && incoming().createdByUid == request.auth.uid
-        && (
-          (incoming().whiteUid == request.auth.uid && isValidOptionalId(incoming().blackUid)) ||
-          (incoming().blackUid == request.auth.uid && isValidOptionalId(incoming().whiteUid))
-        )
+        && (incoming().whiteUid == request.auth.uid || incoming().blackUid == request.auth.uid)
         && incoming().status in ['waiting', 'playing']
         && incoming().moveCount == 0
         && incoming().winner == ''
@@ -392,3 +387,51 @@ service cloud.firestore {
               'status', 'winner', 'endReason', 'drawOfferBy', 'whiteTimeMs', 'blackTimeMs', 'updatedAt'
             ])
           )
+        );
+
+      allow delete: if isVerifiedUser()
+        && isValidId(matchId)
+        && ((existing().status == 'waiting' && existing().createdByUid == request.auth.uid) || isAdmin());
+
+      match /chat/{messageId} {
+        allow get: if isVerifiedUser() && isValidId(matchId) && isValidId(messageId) && isMatchParticipant(matchId);
+        allow list: if isVerifiedUser() && isValidId(matchId) && isMatchParticipant(matchId);
+        allow create: if isVerifiedUser()
+          && isValidId(matchId)
+          && isValidId(messageId)
+          && isValidChat(incoming())
+          && isMatchParticipant(matchId)
+          && incoming().uid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection 4: /roomCodes/{code} (Get-only code -> matchId directory)
+    // -------------------------------------------------------------------------
+    function isValidRoomCodeIndex(data, code) {
+      return data.keys().hasAll(['code', 'matchId', 'createdByUid', 'createdAt'])
+        && data.keys().hasOnly(['code', 'matchId', 'createdByUid', 'createdAt'])
+        && code is string && code.size() == 6 && code.matches('^[A-Z0-9]{6}$')
+        && data.code == code
+        && isValidId(data.matchId)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp;
+    }
+
+    match /roomCodes/{code} {
+      allow get: if isVerifiedUser() && code.size() == 6 && code.matches('^[A-Z0-9]{6}$');
+      allow list: if false;
+
+      allow create: if isVerifiedUser()
+        && isValidRoomCodeIndex(incoming(), code)
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/matches/$(incoming().matchId));
+
+      allow update: if false;
+      allow delete: if isVerifiedUser() && (existing().createdByUid == request.auth.uid || isAdmin());
+    }
+  }
+}

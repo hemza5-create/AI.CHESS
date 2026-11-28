@@ -10,9 +10,31 @@ const EXTERNAL_SERVER_STORAGE_KEY = 'chess_vision_external_server_url';
 const EXTERNAL_SERVER_ID_STORAGE_KEY = 'chess_vision_external_server_id';
 const VISION_API_STORAGE_KEY = 'chess_vision_board_api_url';
 const API_ROUTES_STORAGE_KEY = 'chess_vision_api_routes_v2';
+const MULTI_CLOUD_CONFIG_KEY = 'chess_vision_multi_cloud_v1';
 
 export const APP_VERSION = '1.1.0';
 export const DEFAULT_EXTERNAL_SERVER_ID = 'cvsu-uci-core-v2';
+
+export type CloudProviderId = 'primary' | 'gcp' | 'aws';
+export type CloudRoutingMode = 'auto' | 'primary' | 'gcp' | 'aws';
+
+export interface MultiCloudConfig {
+  gcpUrl: string;
+  gcpRegion: string;
+  awsUrl: string;
+  awsRegion: string;
+  routingMode: CloudRoutingMode;
+}
+
+export interface CloudNodeProbeResult {
+  id: CloudProviderId;
+  url: string;
+  region: string;
+  configured: boolean;
+  reachable: boolean;
+  latencyMs: number | null;
+  detectedProvider?: string;
+}
 
 export type RemoteServerStatus =
   | 'checking'
@@ -296,6 +318,7 @@ export function getConfiguredApiRoutes() {
     vaultPolicy: '/api/v2/vault/policy',
     onlineBootstrap: '/api/v2/online/bootstrap',
     onlineProfile: '/api/v2/online/profile',
+    cloudNodes: '/api/v2/cloud/nodes',
   } as const;
 }
 
@@ -586,3 +609,272 @@ export function useOnlineStatus(): boolean {
 
   return isOnline;
 }
+
+function sanitizeRegionLabel(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed || /^aiza|^akia|^asia/i.test(trimmed)) return fallback;
+  if (!/^[a-z]{2}(-[a-z0-9]+)+$/.test(trimmed)) return fallback;
+  return trimmed.slice(0, 32);
+}
+
+export function getStoredMultiCloudConfig(): MultiCloudConfig {
+  const envGcpUrl = normalizeServerBaseUrl(
+    (import.meta.env?.VITE_GCP_CLOUD_URL as string | undefined) ?? ''
+  );
+  const envAwsUrl = normalizeServerBaseUrl(
+    (import.meta.env?.VITE_AWS_CLOUD_URL as string | undefined) ?? ''
+  );
+  const envGcpRegion = sanitizeRegionLabel(
+    import.meta.env?.VITE_GCP_CLOUD_REGION,
+    'europe-west2'
+  );
+  const envAwsRegion = sanitizeRegionLabel(
+    import.meta.env?.VITE_AWS_CLOUD_REGION,
+    'eu-west-1'
+  );
+
+  try {
+    const raw = globalThis.localStorage?.getItem(MULTI_CLOUD_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<MultiCloudConfig>;
+      const routingMode: CloudRoutingMode =
+        parsed.routingMode === 'primary' ||
+        parsed.routingMode === 'gcp' ||
+        parsed.routingMode === 'aws' ||
+        parsed.routingMode === 'auto'
+          ? parsed.routingMode
+          : 'auto';
+      return {
+        gcpUrl: normalizeServerBaseUrl(parsed.gcpUrl ?? '') || envGcpUrl,
+        gcpRegion: sanitizeRegionLabel(parsed.gcpRegion, envGcpRegion),
+        awsUrl: normalizeServerBaseUrl(parsed.awsUrl ?? '') || envAwsUrl,
+        awsRegion: sanitizeRegionLabel(parsed.awsRegion, envAwsRegion),
+        routingMode,
+      };
+    }
+  } catch {
+    // Ignore storage parse failures
+  }
+
+  return {
+    gcpUrl: envGcpUrl,
+    gcpRegion: envGcpRegion,
+    awsUrl: envAwsUrl,
+    awsRegion: envAwsRegion,
+    routingMode: 'auto',
+  };
+}
+
+export function saveMultiCloudConfig(next: Partial<MultiCloudConfig>): MultiCloudConfig {
+  const current = getStoredMultiCloudConfig();
+  const updated: MultiCloudConfig = {
+    gcpUrl: next.gcpUrl !== undefined ? normalizeServerBaseUrl(next.gcpUrl) : current.gcpUrl,
+    gcpRegion:
+      next.gcpRegion !== undefined
+        ? sanitizeRegionLabel(next.gcpRegion, current.gcpRegion)
+        : current.gcpRegion,
+    awsUrl: next.awsUrl !== undefined ? normalizeServerBaseUrl(next.awsUrl) : current.awsUrl,
+    awsRegion:
+      next.awsRegion !== undefined
+        ? sanitizeRegionLabel(next.awsRegion, current.awsRegion)
+        : current.awsRegion,
+    routingMode: next.routingMode ?? current.routingMode,
+  };
+  try {
+    globalThis.localStorage?.setItem(MULTI_CLOUD_CONFIG_KEY, JSON.stringify(updated));
+  } catch {
+    // Ignore storage write failures
+  }
+  return updated;
+}
+
+export async function fetchServerCloudNodes(
+  externalServerUrl?: string,
+  externalServerId?: string
+): Promise<{
+  runtimeProvider: string;
+  runtimeRegion: string;
+  gcpUrl: string;
+  gcpRegion: string;
+  awsUrl: string;
+  awsRegion: string;
+} | null> {
+  const url = buildApiUrl(getConfiguredApiRoutes().cloudNodes, externalServerUrl);
+  if (!url) return null;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: getServerIdHeaders(externalServerId),
+    });
+    const parsed = await safeParseJsonBody<{
+      runtimeProvider?: string;
+      runtimeRegion?: string;
+      nodes?: Array<{ id?: string; region?: string; url?: string }>;
+    }>(res);
+    if (!parsed.ok || !parsed.data) return null;
+    const gcpNode = parsed.data.nodes?.find((n) => n.id === 'gcp');
+    const awsNode = parsed.data.nodes?.find((n) => n.id === 'aws');
+    return {
+      runtimeProvider: parsed.data.runtimeProvider ?? 'gcp',
+      runtimeRegion: parsed.data.runtimeRegion ?? 'europe-west2',
+      gcpUrl: normalizeServerBaseUrl(gcpNode?.url ?? ''),
+      gcpRegion: sanitizeRegionLabel(gcpNode?.region, 'europe-west2'),
+      awsUrl: normalizeServerBaseUrl(awsNode?.url ?? ''),
+      awsRegion: sanitizeRegionLabel(awsNode?.region, 'eu-west-1'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function probeCloudNode(
+  id: CloudProviderId,
+  region: string,
+  url: string,
+  externalServerId?: string,
+  timeoutMs = 3500
+): Promise<CloudNodeProbeResult> {
+  const normalizedUrl = normalizeServerBaseUrl(url);
+  if (id !== 'primary' && !normalizedUrl) {
+    return {
+      id,
+      url: '',
+      region,
+      configured: false,
+      reachable: false,
+      latencyMs: null,
+    };
+  }
+
+  const healthUrl = buildApiUrl(
+    getConfiguredApiRoutes().engineHealth,
+    normalizedUrl
+  );
+  if (!healthUrl) {
+    return {
+      id,
+      url: normalizedUrl,
+      region,
+      configured: id === 'primary',
+      reachable: false,
+      latencyMs: null,
+    };
+  }
+
+  const startedAt =
+    typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(healthUrl, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: getServerIdHeaders(externalServerId),
+      signal: controller.signal,
+    });
+    const parsed = await safeParseJsonBody<{
+      ok?: boolean;
+      cloudProvider?: string;
+      cloudRegion?: string;
+    }>(res);
+    const endedAt =
+      typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const latencyMs = Math.max(1, Math.round(endedAt - startedAt));
+    if (res.ok && parsed.ok && parsed.data?.ok) {
+      return {
+        id,
+        url: normalizedUrl,
+        region: parsed.data.cloudRegion || region,
+        configured: true,
+        reachable: true,
+        latencyMs,
+        detectedProvider: parsed.data.cloudProvider,
+      };
+    }
+    return {
+      id,
+      url: normalizedUrl,
+      region,
+      configured: true,
+      reachable: false,
+      latencyMs: null,
+    };
+  } catch {
+    return {
+      id,
+      url: normalizedUrl,
+      region,
+      configured: true,
+      reachable: false,
+      latencyMs: null,
+    };
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
+}
+
+export async function probeAllMultiCloudNodes(
+  config: MultiCloudConfig,
+  externalServerUrl?: string,
+  externalServerId?: string
+): Promise<{
+  probes: CloudNodeProbeResult[];
+  optimalUrl: string;
+  activeNodeId: CloudProviderId;
+}> {
+  const primaryBase = normalizeServerBaseUrl(externalServerUrl ?? '');
+  const [primaryProbe, rawGcpProbe, awsProbe] = await Promise.all([
+    probeCloudNode('primary', config.gcpRegion, primaryBase, externalServerId),
+    probeCloudNode('gcp', config.gcpRegion, config.gcpUrl, externalServerId),
+    probeCloudNode('aws', config.awsRegion, config.awsUrl, externalServerId),
+  ]);
+
+  const gcpProbe: CloudNodeProbeResult =
+    !config.gcpUrl && primaryProbe.reachable && primaryProbe.detectedProvider === 'gcp'
+      ? {
+          id: 'gcp',
+          url: primaryBase,
+          region: primaryProbe.region,
+          configured: true,
+          reachable: true,
+          latencyMs: primaryProbe.latencyMs,
+          detectedProvider: 'gcp',
+        }
+      : rawGcpProbe;
+
+  const probes = [primaryProbe, gcpProbe, awsProbe];
+  const selected = selectOptimalCloudNode(probes, config.routingMode, primaryBase);
+  return {
+    probes,
+    optimalUrl: selected.url,
+    activeNodeId: selected.id,
+  };
+}
+
+export function selectOptimalCloudNode(
+  probes: CloudNodeProbeResult[],
+  routingMode: CloudRoutingMode,
+  fallbackUrl = ''
+): { id: CloudProviderId; url: string } {
+  if (routingMode !== 'auto') {
+    const preferred = probes.find((p) => p.id === routingMode && p.reachable);
+    if (preferred) {
+      return { id: preferred.id, url: preferred.id === 'primary' ? fallbackUrl : preferred.url };
+    }
+  }
+
+  const reachable = probes
+    .filter((p) => p.reachable && p.latencyMs !== null)
+    .sort((a, b) => (a.latencyMs ?? 99999) - (b.latencyMs ?? 99999));
+
+  if (reachable.length > 0) {
+    const best = reachable[0];
+    return { id: best.id, url: best.id === 'primary' ? fallbackUrl : best.url };
+  }
+
+  return { id: 'primary', url: fallbackUrl };
+}
+

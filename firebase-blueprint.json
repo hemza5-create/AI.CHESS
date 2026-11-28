@@ -353,6 +353,36 @@
         }
       },
       "required": ["uid", "name", "country", "text", "createdAt"]
+    },
+    "RoomCodeIndex": {
+      "title": "RoomCodeIndex",
+      "description": "Direct 6-character room code lookup index allowing point-get access to matches without listing private rooms.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[A-Z0-9]{6}$"
+        },
+        "matchId": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdByUid": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["code", "matchId", "createdByUid", "createdAt"]
     }
   },
   "firestore": {
@@ -371,6 +401,10 @@
     "/matches/{matchId}/chat/{messageId}": {
       "schema": { "$ref": "#/entities/CloudMatchChat" },
       "description": "Subcollection of chat messages scoped strictly to participants of the parent match."
+    },
+    "/roomCodes/{code}": {
+      "schema": { "$ref": "#/entities/RoomCodeIndex" },
+      "description": "Get-only room code directory mapping 6-character invite codes to match IDs."
     }
   }
 }
