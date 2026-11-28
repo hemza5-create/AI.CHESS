@@ -1120,10 +1120,28 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
   );
 
   useEffect(() => {
-    if (authError) {
+    if (!authError) return;
+    const code = authErrorInfo?.code;
+    if (language === 'ar') {
+      if (code === 'auth/unauthorized-domain') {
+        setErrorBanner(`النطاق (${authErrorInfo?.hostname || 'localhost'}) غير مصرّح به في Firebase Auth.`);
+      } else if (code === 'auth/mobile-bridge-unconfigured') {
+        setErrorBanner('يرجى إدخال رابط خادم السحابة في "إعداد العقد" لإتمام تسجيل Google عبر متصفح Chrome.');
+      } else if (code === 'auth/mobile-bridge-unreachable') {
+        setErrorBanner('تعذر الوصول إلى خادم ربط Google. تحقق من رابط العقدة في "إعداد العقد" أو من اتصال الإنترنت.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        setErrorBanner('تم إلغاء تسجيل الدخول عبر Google أو انتهت مهلة الجلسة.');
+      } else if (code === 'auth/popup-blocked') {
+        setErrorBanner('حظر المتصفح نافذة تسجيل الدخول. جارٍ التحويل أو يرجى السماح بالنوافذ المنبثقة.');
+      } else if (code === 'auth/network-request-failed') {
+        setErrorBanner('فشل اتصال الشبكة أثناء تسجيل الدخول عبر Google.');
+      } else {
+        setErrorBanner(authError);
+      }
+    } else {
       setErrorBanner(authError);
     }
-  }, [authError]);
+  }, [authError, authErrorInfo, language]);
 
   useEffect(() => {
     activeRoomIdRef.current = activeRoom?.roomId ?? null;
@@ -2502,7 +2520,12 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
                 onClick={() => {
                   clearAuthError();
                   setErrorBanner(null);
-                  void signInWithGoogle(effectiveTransportServerUrl, externalServerId);
+                  const bridgeCandidateUrl =
+                    effectiveTransportServerUrl ||
+                    multiCloudConfig.gcpUrl ||
+                    multiCloudConfig.awsUrl ||
+                    externalServerUrl;
+                  void signInWithGoogle(bridgeCandidateUrl, externalServerId);
                 }}
                 className="inline-flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 disabled:opacity-60 rounded-lg transition-colors shadow-sm cursor-pointer"
               >
@@ -2742,6 +2765,25 @@ export const OnlinePlayPage: React.FC<OnlinePlayPageProps> = ({
               ✕
             </button>
           </div>
+
+          {(authErrorInfo?.code === 'auth/mobile-bridge-unconfigured' ||
+            authErrorInfo?.code === 'auth/mobile-bridge-unreachable') && (
+            <div className="pt-2 border-t border-rose-400/30 text-[11px] sm:text-xs text-amber-100 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-slate-200">
+                {language === 'ar'
+                  ? 'لتسجيل الدخول على أندرويد دون خطأ النطاق، تأكد من إدخال رابط الخادم (Cloud Run أو AWS) داخل إعداد العقد.'
+                  : 'To sign in on Android without domain restrictions, enter a reachable Cloud Run or AWS server URL in Cloud Nodes settings.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowMultiCloudEditor(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-cyan-400 text-slate-950 font-bold text-xs cursor-pointer"
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                <span>{copy.multiCloudConfigBtn}</span>
+              </button>
+            </div>
+          )}
 
           {authErrorInfo?.code === 'auth/unauthorized-domain' && (
             <div className="pt-2 border-t border-rose-400/30 text-[11px] sm:text-xs text-amber-100 space-y-1.5">

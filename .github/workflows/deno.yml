@@ -51,6 +51,8 @@ jobs:
         run: npm install --package-lock=false @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Initialize Capacitor and add Android platform
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           if [ ! -f capacitor.config.ts ] && [ ! -f capacitor.config.json ]; then
             npx cap init "AI Chess" "com.hemza.aichess" --web-dir dist

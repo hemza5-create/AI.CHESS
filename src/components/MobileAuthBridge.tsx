@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Cloud, Loader2, LogIn, ShieldAlert } from 'lucide-react';
+import type { UserCredential } from 'firebase/auth';
 import {
   extractGoogleOAuthTokens,
   FIREBASE_PROJECT_ID,
+  getGoogleRedirectResult,
+  parseFirebaseAuthError,
   signInWithGooglePopupRaw,
+  signInWithGoogleRedirect,
 } from '../firebase/firebaseApp.ts';
 import { useLanguage } from '../i18n/LanguageContext.tsx';
 import {
@@ -32,11 +36,8 @@ export const MobileAuthBridge: React.FC<MobileAuthBridgeProps> = ({
   const [completed, setCompleted] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleContinueGoogle = async () => {
-    setBusy(true);
-    setErrorMsg(null);
-    try {
-      const result = await signInWithGooglePopupRaw();
+  const finalizeWithCredential = useCallback(
+    async (result: UserCredential) => {
       const { idToken, accessToken } = extractGoogleOAuthTokens(result);
       if (!idToken && !accessToken) {
         throw new Error(
@@ -70,9 +71,59 @@ export const MobileAuthBridge: React.FC<MobileAuthBridgeProps> = ({
       globalThis.setTimeout(() => {
         window.location.href = 'com.hemza.aichess://auth-complete';
       }, 450);
+    },
+    [isAr, serverIdParam, sessionId, writeSecret]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void getGoogleRedirectResult()
+      .then(async (redirectRes) => {
+        if (!cancelled && redirectRes) {
+          setBusy(true);
+          try {
+            await finalizeWithCredential(redirectRes);
+          } finally {
+            if (!cancelled) setBusy(false);
+          }
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setErrorMsg(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [finalizeWithCredential]);
+
+  const handleContinueGoogle = async () => {
+    setBusy(true);
+    setErrorMsg(null);
+    try {
+      const result = await signInWithGooglePopupRaw();
+      await finalizeWithCredential(result);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : String(err));
+      const parsed = parseFirebaseAuthError(err);
+      if (
+        parsed.code === 'auth/popup-blocked' ||
+        parsed.code === 'auth/operation-not-supported-in-this-environment'
+      ) {
+        await signInWithRedirectFallback();
+        return;
+      }
+      setErrorMsg(parsed.message);
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const signInWithRedirectFallback = async () => {
+    try {
+      await signInWithGoogleRedirect();
+    } catch (redirectErr) {
+      setErrorMsg(redirectErr instanceof Error ? redirectErr.message : String(redirectErr));
       setBusy(false);
     }
   };

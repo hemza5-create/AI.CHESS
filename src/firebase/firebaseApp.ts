@@ -1,9 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
+  getRedirectResult,
   GoogleAuthProvider,
   signInWithCredential,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type Auth,
   type User,
@@ -22,6 +24,8 @@ export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseI
 export const auth: Auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('profile');
+googleProvider.addScope('email');
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export enum OperationType {
@@ -94,6 +98,14 @@ export async function signInWithGooglePopupRaw(): Promise<UserCredential> {
   return signInWithPopup(auth, googleProvider);
 }
 
+export async function signInWithGoogleRedirect(): Promise<void> {
+  await signInWithRedirect(auth, googleProvider);
+}
+
+export async function getGoogleRedirectResult(): Promise<UserCredential | null> {
+  return getRedirectResult(auth);
+}
+
 export async function signInWithGooglePopup(): Promise<User> {
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
@@ -148,6 +160,14 @@ export function parseFirebaseAuthError(err: unknown): ParsedFirebaseAuthError {
       ? 'auth/popup-closed-by-user'
       : rawMessage.includes('auth/network-request-failed')
       ? 'auth/network-request-failed'
+      : rawMessage.includes('auth/cancelled-popup-request')
+      ? 'auth/cancelled-popup-request'
+      : rawMessage.includes('auth/operation-not-supported-in-this-environment')
+      ? 'auth/operation-not-supported-in-this-environment'
+      : rawMessage.includes('auth/mobile-bridge-unconfigured')
+      ? 'auth/mobile-bridge-unconfigured'
+      : rawMessage.includes('auth/mobile-bridge-unreachable')
+      ? 'auth/mobile-bridge-unreachable'
       : 'auth/unknown');
 
   return {
@@ -164,3 +184,5 @@ export async function signOutFirebase(): Promise<void> {
 
 export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
 export const FIREBASE_DATABASE_ID = firebaseConfig.firestoreDatabaseId;
+export const FIREBASE_AUTH_DOMAIN = firebaseConfig.authDomain;
+export const FIREBASE_OAUTH_CLIENT_ID = firebaseConfig.oAuthClientId;

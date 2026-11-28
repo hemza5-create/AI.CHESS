@@ -15,6 +15,20 @@
       "bestElo": 1200,
       "updatedAt": 1795832491188,
       "platform": "web"
+    },
+    "probe_health_check_1": {
+      "playerId": "probe_health_check_1",
+      "name": "HealthProbe",
+      "country": "DZ",
+      "platform": "web",
+      "elo": 1200,
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "gamesPlayed": 0,
+      "streak": 0,
+      "bestElo": 1200,
+      "updatedAt": 1795855559274
     }
   }
 }
